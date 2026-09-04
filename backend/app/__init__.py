@@ -1,0 +1,2 @@
+"""SOLVO backend application package."""
+
