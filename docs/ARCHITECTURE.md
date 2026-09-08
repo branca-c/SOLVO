@@ -227,7 +227,7 @@ The React/TypeScript Vite app lives in `frontend/`. Components, four pages,
 a small fetch service, shared API types/helpers, and a cancellable resource hook
 keep the implementation local and explicit. Hash-based navigation supports
 refresh, links, and browser back/forward without a routing dependency or server
-fallback configuration. There is no global cache or client-side data store:
+fallback configuration. WorkOrder data has no global cache or client-side data store:
 page entry and the refresh action fetch current data; create navigates to detail;
 successful status changes refetch the ODL and related activity.
 
@@ -240,9 +240,8 @@ same-origin `/api` proxy; deployment is not implemented. No backend routes,
 schemas, models, settings, or dependencies were changed for this frontend.
 
 Dashboard derives five summary counts from the complete WorkOrder list and shows
-the latest eight. The ODL list sends status/priority filters to FastAPI. Category
-names/filtering are omitted because no category endpoint exists: category IDs
-are displayed and entered on creation. The detail retrieves ODL, reminders,
+the latest eight. The ODL list sends status/priority filters to FastAPI. Category names now use the reference-data lookup described in section 16;
+creation uses a select and retains category IDs in API payloads. The detail retrieves ODL, reminders,
 history, and assignments; related sections have independent errors/retry states.
 Status options mirror the explicit backend map, while FastAPI validates each
 PATCH. HTTP errors appear inline; failed creation preserves entered form values.
@@ -255,7 +254,7 @@ indigo sidebar, aqua actions, white surfaces, compact data tables and text badge
 Five summary cards follow the explicit frontend task rather than the four-card
 reference composition. Small screens use stacked table rows, keyboard users can
 open each ODL by its link, forms have labels, and feedback uses live regions.
-Technicians/settings are disabled placeholders. Vitest and Testing Library cover
+Tecnici now has a read-only routing table; settings remains disabled. Vitest and Testing Library cover
 key page flows and helpers; `tsc --noEmit` and `vite build` are quality gates.
 
 
@@ -375,3 +374,24 @@ Run only one backend worker/instance. Connection memory is process-local and has
 shared pub/sub, persistence or replay. The endpoint shares the trusted-network scope
 of existing unauthenticated operator APIs. Further scaling requirements are recorded
 only in ROADMAP.
+
+## 16. Reference data and explicit demo bootstrap
+
+Two read-only routes reuse existing SQLAlchemy models and the session dependency.
+Technicians join Category for category_name, avoiding per-row lazy queries, and
+sort in routing order within each category. No model or migration changes.
+The seed is an explicit Python module, not an app startup hook. Exact category
+names and deterministic demo emails identify rows; an existing conflicting
+routing slot aborts the transaction without overwriting configuration. The user
+email is an application-level seed key (the model has no email unique constraint),
+so the local command is intended for sequential, not concurrent, invocation.
+All inserts commit together, with rollback on any failure. It creates no ODLs.
+
+A shared in-memory promise caches successful category reads for a browser session
+and deduplicates concurrent loads. Failed requests evict the cache for retry;
+unmounted consumers ignore results through the resource hook. A full browser
+reload picks up external reference changes. The same name lookup is used by
+ODL tables/detail/assignments, and all intake modes use one select. Draft resolution prefers
+an existing ID, otherwise one normalized exact name match, including when the
+category request completes after analysis. API creation still validates category
+existence. No new dependencies, settings, providers or workflow mutations.

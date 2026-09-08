@@ -1,3 +1,4 @@
+import type { Category, Technician } from '../types/referenceData'
 import type { Assignment, HistoryEntry, Reminder, WorkOrder, WorkOrderInput, WorkOrderStatus, Priority, WorkOrderDraft, AudioWorkOrderDraft, PublicAssignment, NotificationResult } from '../types/workOrder'
 
 export class ApiError extends Error {
@@ -45,6 +46,8 @@ export function messageFor(error: unknown): string {
   return error instanceof Error ? error.message : 'Si è verificato un errore. Riprova.'
 }
 export const api = {
+  categories: () => request<Category[]>('/categories'),
+  technicians: (categoryId?: number, signal?: AbortSignal) => request<Technician[]>(`/technicians${categoryId === undefined ? '' : `?category_id=${categoryId}`}`, { signal }),
   publicAssignment: (token: string, signal?: AbortSignal) => request<PublicAssignment>(`/public/assignments/${encodeURIComponent(token)}`, { signal, cache: 'no-store' }),
   publicAccept: (token: string) => request<PublicAssignment>(`/public/assignments/${encodeURIComponent(token)}/accept`, { method: 'POST' }),
   publicReject: (token: string, rejection_notes: string | null) => request<PublicAssignment>(`/public/assignments/${encodeURIComponent(token)}/reject`, { method: 'POST', body: JSON.stringify({ rejection_notes }) }),

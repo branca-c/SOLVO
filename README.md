@@ -31,7 +31,7 @@ When documents conflict, the PDF governs functional/technical intent and the PNG
 
 Install `backend/requirements.txt` in a virtual environment and configure
 `DATABASE_URL` using `.env.example`. From `backend/`, run `alembic upgrade head`
-and `uvicorn app.main:app --reload`. Categories must already exist in the database.
+then the explicit demo seed below and `uvicorn app.main:app --reload`.
 Interactive API documentation is available at `/docs`; health remains `/health`.
 
 Run the full backend suite from the repository root:
@@ -44,6 +44,64 @@ API tests use an isolated SQLite database with foreign keys enabled and override
 the session dependency. They do not require PostgreSQL, but do not verify
 PostgreSQL-specific behavior. No formatting, lint, or type-check tooling is
 currently configured in the backend.
+
+## Local first-run and demo reference data
+
+Prerequisites: install backend requirements in `backend/.venv`, install frontend
+packages with `npm ci`, and configure local `.env` from `.env.example` (including
+`DATABASE_URL`). With the backend virtual environment activated:
+
+1. Start PostgreSQL and ensure the configured database exists.
+2. From `backend/`, run `alembic upgrade head`.
+3. From `backend/`, run the explicit seed command:
+
+   ```sh
+   python -m app.scripts.seed_demo
+   ```
+
+4. From `backend/`, start `uvicorn app.main:app --reload`.
+5. In another terminal, from `frontend/`, start `npm run dev` and open
+   `http://127.0.0.1:5173`.
+
+The seed inserts **local/demo data only**. It never runs at application startup
+and is not automatically inserted in production. **WorkOrders are intentionally
+not seeded**: create them through Nuovo ODL, manually or from a reviewed text/audio
+draft. The command targets the database in `DATABASE_URL`.
+
+Seeded categories: Vetri, Climatizzazione, Riscaldamento, Ascensore, Rete,
+Elettrico, Edile, Idraulico, Serramenti, Antincendio, Sicurezza, Arredi, Altro.
+Each category gets four distinct fictional people (`Demo 1` through `Demo 4`,
+category as surname): three normal technicians at orders 1–3 and one caposquadra
+at order 4, for 52 technicians total. Emails use `solvo-demo.example`; phone
+numbers use the fictional +1 202 555 01xx range and are for mock demonstrations.
+The reminder user is `Richiedente Demo`, role `UTENTE`, email
+`richiedente@solvo-demo.example`. The command prints its real `created_by` ID
+for the existing reminder API; it does not assume ID 1.
+
+Repeated sequential runs reuse categories by exact name, demo technicians by
+stable email, and the demo user by email. Existing rows are not overwritten.
+A conflicting escalation slot or changed demo routing configuration aborts and
+rolls back the whole seed. Run the command once at a time; concurrent seed runs
+are not supported. No schema or migration change is required.
+
+Read-only reference endpoints:
+
+- `GET /api/categories`: `id`, `name`, nullable `description`, ordered by name.
+- `GET /api/technicians`: `id`, `first_name`, `last_name`, `phone`, nullable
+  `email`, `category_id`, `category_name`, `escalation_order`, `is_team_leader`.
+  Optional positive `category_id` filters the results; an unknown category gives
+  `[]`. Ordering is category name, normal technicians before leaders, escalation
+  order, then ID.
+
+The category lookup is cached in memory for the browser session; reload the page
+after changing reference data externally. Loading/error/empty states prevent
+creation without a configured category, and failed loads can be retried.
+AI drafts select a configured category by ID, or by an unambiguous normalized
+name if the ID is unavailable; unresolved categories require manual selection.
+
+Existing scope still applies: routing start and reminder creation use the API
+(`/docs`), while the UI supports intake, detail/status actions and technician
+notification/action links. This bootstrap does not add workflow controls.
 
 ## WorkOrder API
 
@@ -174,14 +232,15 @@ il proxy Vite inoltra le richieste a FastAPI: non sono necessarie modifiche CORS
 al backend. Le variabili frontend non devono contenere segreti.
 
 Le pagine disponibili sono Dashboard (`#/`), ODL (`#/odl`), creazione
-(`#/odl/nuovo`) e dettaglio (`#/odl/{id}`). Le voci Tecnici e Impostazioni sono
-placeholder disabilitati. Dashboard e lista caricano dati reali da FastAPI;
+(`#/odl/nuovo`), dettaglio (`#/odl/{id}`) e Tecnici (`#/tecnici`). Impostazioni
+rimane un placeholder disabilitato. Dashboard e lista caricano dati reali da FastAPI;
 la Dashboard mostra cinque conteggi e gli otto ODL più recenti. Il conteggio
 Urgenti comprende tutti gli stati; Evasi/Chiusi somma EVASO e CHIUSO.
 
-La lista filtra per stato e priorità sul server. Non essendoci un endpoint
-categorie, il frontend mostra `Categoria #ID` e richiede un ID esistente nel form;
-non aggiunge categorie o filtri inventati. Il dettaglio mostra ODL, solleciti,
+La lista filtra per stato e priorità sul server. Dashboard, lista e dettaglio
+mostrano i nomi categoria tramite un lookup condiviso. Il form manuale/AI/audio
+carica un select da `/api/categories` e invia il relativo `category_id`.
+La pagina Tecnici mostra categoria, ordine escalation, ruolo e telefono senza CRUD. Il dettaglio mostra ODL, solleciti,
 history e assegnazioni, con errori e ricaricamento indipendenti delle sezioni.
 Il form crea un ODL e apre il suo dettaglio con conferma inline. Le azioni di
 stato propongono solo le transizioni consentite; il backend resta autorevole e

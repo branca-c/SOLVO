@@ -8,8 +8,11 @@ import { WorkOrders } from '../pages/WorkOrders'
 import { WorkOrderDetail } from '../pages/WorkOrderDetail'
 import { CreateWorkOrder } from '../pages/CreateWorkOrder'
 import { api } from '../services/api'
+import { clearCategoriesCache } from '../hooks/useCategories'
 import { order } from './fixtures'
 beforeEach(() => {
+  clearCategoriesCache()
+  vi.spyOn(api, 'categories').mockResolvedValue([{ id: 2, name: 'Idraulico', description: null }])
   window.location.hash = '/'
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   vi.spyOn(api, 'list').mockResolvedValue([order])
@@ -52,7 +55,7 @@ it('creates from a labeled form and navigates only after success', async () => {
   await userEvent.type(screen.getByLabelText('Cognome *'), 'Rossi')
   await userEvent.type(screen.getByLabelText('Telefono *'), '123456')
   await userEvent.type(screen.getByLabelText('Indirizzo del guasto *'), 'Via Roma 12')
-  await userEvent.type(screen.getByLabelText('ID categoria *'), '2')
+  await userEvent.selectOptions(screen.getByLabelText('Categoria *'), 'Idraulico')
   await userEvent.type(screen.getByLabelText('Descrizione del guasto *'), 'Perdita acqua')
   await userEvent.click(screen.getByRole('button', { name: 'Crea ODL' }))
   await waitFor(() => expect(onCreated).toHaveBeenCalledWith(1))
@@ -97,4 +100,49 @@ it('offers no transitions for terminal ODLs', async () => {
   await screen.findByText(order.description)
   expect(screen.queryByRole('button', { name: 'Applica stato' })).toBeNull()
   expect(screen.getByText(/Questo ODL è concluso/)).toBeTruthy()
+})
+
+it('shows category names in dashboard, list and detail with a shared lookup', async () => {
+  const first = render(<Dashboard />)
+  expect(await screen.findByText('Idraulico')).toBeTruthy()
+  expect(screen.queryByText('Categoria #2')).toBeNull()
+  first.unmount()
+  const second = render(<WorkOrders />)
+  expect(await screen.findByText('Idraulico')).toBeTruthy()
+  second.unmount()
+  render(<WorkOrderDetail id={1} />)
+  expect(await screen.findByText('Idraulico')).toBeTruthy()
+  expect(api.categories).toHaveBeenCalledTimes(1)
+})
+
+it('opens technicians from the sidebar and shows routing information', async () => {
+  vi.spyOn(api, 'technicians').mockResolvedValue([
+    { id: 1, first_name: 'Demo 1', last_name: 'Idraulico', phone: '+12025550101', email: null, category_id: 2, category_name: 'Idraulico', escalation_order: 1, is_team_leader: false },
+    { id: 4, first_name: 'Demo 4', last_name: 'Idraulico', phone: '+12025550104', email: null, category_id: 2, category_name: 'Idraulico', escalation_order: 4, is_team_leader: true },
+  ])
+  render(<App />)
+  await userEvent.click(screen.getByRole('link', { name: 'Tecnici' }))
+  expect(await screen.findByText('Demo 4 Idraulico')).toBeTruthy()
+  const row = screen.getByText('Demo 4 Idraulico').closest('tr')!
+  expect(within(row).getByText('Caposquadra')).toBeTruthy()
+  expect(within(row).getByText('4')).toBeTruthy()
+  expect(within(row).getByText('Idraulico')).toBeTruthy()
+  expect(within(row).getByText('+12025550104')).toBeTruthy()
+})
+
+it('blocks creation while categories fail and allows retry', async () => {
+  vi.mocked(api.categories).mockRejectedValueOnce(new Error('Categorie non disponibili'))
+  render(<CreateWorkOrder onCreated={vi.fn()} />)
+  expect((screen.getByLabelText('Categoria *') as HTMLSelectElement).disabled).toBe(true)
+  await screen.findByText('Categorie non disponibili')
+  expect((screen.getByRole('button', { name: 'Crea ODL' }) as HTMLButtonElement).disabled).toBe(true)
+  await userEvent.click(screen.getByRole('button', { name: 'Riprova' }))
+  expect(await screen.findByRole('option', { name: 'Idraulico' })).toBeTruthy()
+})
+
+it('explains an empty category configuration', async () => {
+  vi.mocked(api.categories).mockResolvedValue([])
+  render(<CreateWorkOrder onCreated={vi.fn()} />)
+  expect(await screen.findByText('Nessuna categoria configurata.')).toBeTruthy()
+  expect((screen.getByRole('button', { name: 'Crea ODL' }) as HTMLButtonElement).disabled).toBe(true)
 })

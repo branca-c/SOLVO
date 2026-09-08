@@ -1,3 +1,4 @@
+from app.api.reference_data import router as reference_data_router
 from fastapi import APIRouter
 
 from app.api.public_assignments import router as public_assignments_router
@@ -8,6 +9,7 @@ from app.api.work_orders import router as work_orders_router
 from app.schemas.health import HealthResponse
 
 api_router = APIRouter()
+api_router.include_router(reference_data_router)
 api_router.include_router(realtime_router)
 api_router.include_router(public_assignments_router)
 api_router.include_router(work_orders_router)

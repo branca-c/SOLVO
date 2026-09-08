@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Icon } from './Icon'
-export function Layout({ title, section, children }: { title: string; section: 'dashboard' | 'odl'; children: ReactNode }) {
+export function Layout({ title, section, children }: { title: string; section: 'dashboard' | 'odl' | 'tecnici'; children: ReactNode }) {
   return <div className="app-shell">
     <a className="skip-link" href="#main-content" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus() }}>Vai al contenuto</a>
     <aside className="sidebar">
@@ -9,7 +9,7 @@ export function Layout({ title, section, children }: { title: string; section: '
       <nav aria-label="Navigazione principale">
         <a href="#/" className={section === 'dashboard' ? 'nav-link active' : 'nav-link'} aria-current={section === 'dashboard' ? 'page' : undefined}><Icon name="dashboard" />Dashboard</a>
         <a href="#/odl" className={section === 'odl' ? 'nav-link active' : 'nav-link'} aria-current={section === 'odl' ? 'page' : undefined}><Icon name="orders" />ODL</a>
-        <button className="nav-link" disabled title="Sezione non disponibile"><Icon name="users" />Tecnici<span className="placeholder-tag">Presto</span></button>
+        <a href="#/tecnici" className={section === 'tecnici' ? 'nav-link active' : 'nav-link'} aria-current={section === 'tecnici' ? 'page' : undefined}><Icon name="users" />Tecnici</a>
         <button className="nav-link" disabled title="Sezione non disponibile"><Icon name="settings" />Impostazioni</button>
       </nav>
       <div className="sidebar-bottom"><span className="avatar operator-avatar">OP</span><div><strong>Operatore</strong><small>Area operativa</small></div></div>

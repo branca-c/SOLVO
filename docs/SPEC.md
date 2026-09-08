@@ -204,7 +204,7 @@ The first operator frontend includes Dashboard, ODL list, ODL detail, and manual
 ODL creation. Dashboard cards show total, APERTO, IN_CORSO, all URGENTE-priority
 orders, and combined EVASO/CHIUSO counts. Its recent table displays the latest
 eight orders. The full list has status and priority filters, opens each ODL,
-and displays category IDs because the API does not expose category names.
+and displays category names through the shared reference-data lookup.
 Manual creation accepts the existing required fields and optional email and
 navigates to the created ODL with inline success feedback.
 
@@ -212,7 +212,7 @@ Detail displays ODL data and reads reminders, history and assignments. The statu
 action offers only the transitions in section 10 and reloads data after success.
 The frontend does not expose technician assignment actions or reminder creation.
 Loading, empty, recoverable error and success states are included. Dashboard and
-ODL navigation are functional; Tecnici and Impostazioni are disabled placeholders.
+ODL and Tecnici navigation are functional; Impostazioni is a disabled placeholder.
 Data is fetched on entry, refresh and successful mutations; Dashboard and ODL detail also refresh through the realtime slice below.
 
 
@@ -307,3 +307,15 @@ bursts; reconnect also refreshes data to cover events lost while disconnected.
 The UI shows a small connection indicator and retries with 3–15 second backoff.
 Manual refresh is still available. This is best-effort single-instance delivery,
 with no authentication, shared message bus, durable replay or background scheduler.
+
+## 16. Delivered reference-data/demo bootstrap
+
+Read-only `/api/categories` lists configured categories by name; `/api/technicians`
+lists category routing configuration with an optional category ID filter.
+Tecnici displays names, category, escalation order, technician/team-leader role
+and phone. Manual, text and audio intake share a category select; dashboard,
+list and detail show names. Payloads retain the existing category ID contract.
+An explicit local seed creates the 13 initial categories, three normal technicians
+and one team leader per category, plus one demo requester usable for reminders.
+It is idempotent, never runs on startup and never seeds ODLs. No authentication,
+reference-data editing or additional workflow controls are introduced.

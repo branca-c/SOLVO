@@ -1,3 +1,4 @@
+import { CategoryName } from '../components/CategoryName'
 import type { WorkOrder } from '../types/workOrder'
 import { formatDate } from '../services/format'
 import { navigate } from '../services/navigation'
@@ -16,7 +17,7 @@ export function WorkOrderTable({ orders, full = false }: { orders: WorkOrder[]; 
       <td data-label="Data"><time dateTime={order.created_at}>{formatDate(order.created_at)}</time></td>
       <td data-label="Richiedente"><span className="requester"><span className="avatar small" aria-hidden="true">{order.user_first_name[0]}{order.user_last_name[0]}</span><span>{order.user_first_name} {order.user_last_name}</span></span></td>
       {full && <td data-label="Indirizzo" className="address-cell">{order.fault_address}</td>}
-      <td data-label="Categoria">Categoria #{order.category_id}</td>
+      <td data-label="Categoria"><CategoryName id={order.category_id} /></td>
       <td data-label="Priorità"><PriorityBadge value={order.priority} /></td>
       <td data-label="Stato"><StatusBadge value={order.status} /></td>
       {full && <td data-label="Solleciti"><span className="count">{order.reminders_count}</span></td>}

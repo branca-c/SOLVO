@@ -1,3 +1,4 @@
+import { useCategories, resolveCategory } from '../hooks/useCategories'
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { api, messageFor } from '../services/api'
 import { navigate } from '../services/navigation'
@@ -8,6 +9,8 @@ import { Icon } from '../components/Icon'
 import { AITextIntake } from '../components/AITextIntake'
 import { AudioIntake } from '../components/AudioIntake'
 export function CreateWorkOrder({ onCreated }: { onCreated: (id: number) => void }) {
+  const categories = useCategories()
+  const pendingCategory = useRef<WorkOrderDraft | null>(null)
   const [mode, setMode] = useState<'manual' | 'ai'>('manual')
   const [audioBusy, setAudioBusy] = useState(false)
   const [sourceText, setSourceText] = useState('')
@@ -26,14 +29,22 @@ export function CreateWorkOrder({ onCreated }: { onCreated: (id: number) => void
     } }
   }
   function applyDraft(result: WorkOrderDraft) {
+    pendingCategory.current = categories.data ? null : result
     setDraft(result)
     setValues({
       user_first_name: result.user_first_name ?? '', user_last_name: result.user_last_name ?? '',
       user_phone: result.user_phone ?? '', user_email: result.user_email ?? '',
-      fault_address: result.fault_address ?? '', category_id: result.category_id?.toString() ?? '',
+      fault_address: result.fault_address ?? '', category_id: resolveCategory(categories.data ?? [], result.category_id, result.category_name),
       priority: result.priority ?? '', description: result.description,
     })
   }
+  useEffect(() => {
+    if (categories.data && pendingCategory.current) {
+      const result = pendingCategory.current
+      pendingCategory.current = null
+      setValues(current => ({ ...current, category_id: resolveCategory(categories.data!, result.category_id, result.category_name) }))
+    }
+  }, [categories.data, draft])
   async function analyze(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (analyzing || busy || audioBusy || !sourceText.trim()) return
@@ -57,6 +68,9 @@ export function CreateWorkOrder({ onCreated }: { onCreated: (id: number) => void
     setError('')
     if (['user_first_name', 'user_last_name', 'user_phone', 'fault_address', 'description'].some(name => !text(name))) {
       setError('Compila tutti i campi obbligatori con un valore valido.'); return
+    }
+    if (!categories.data?.some(item => String(item.id) === text('category_id'))) {
+      setError('Seleziona una categoria configurata.'); return
     }
     setBusy(true)
     try {
@@ -101,11 +115,19 @@ export function CreateWorkOrder({ onCreated }: { onCreated: (id: number) => void
       </div></fieldset>
       <fieldset disabled={busy || analyzing || audioBusy}><legend>Intervento</legend><div className="form-grid">
         <label className="full-width">Indirizzo del guasto *<input {...field('fault_address')} required maxLength={500} autoComplete="street-address" placeholder="Via, numero civico, edificio o locale" /></label>
-        <div className="field"><label htmlFor="category-id">ID categoria *</label><input id="category-id" {...field('category_id')} type="number" required min="1" step="1" aria-describedby="category-help" /><small id="category-help">Inserisci l’ID di una categoria già configurata.</small></div>
+        <div className="field"><label htmlFor="category-id">Categoria *</label>
+          <select id="category-id" {...field('category_id')} required disabled={categories.loading || !categories.data?.length}>
+            <option value="">{categories.loading ? 'Caricamento categorie…' : 'Seleziona una categoria'}</option>
+            {categories.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+          {categories.loading && <small role="status">Caricamento categorie…</small>}
+          {categories.error && <ErrorMessage message={categories.error} retry={categories.reload} />}
+          {!categories.loading && !categories.error && !categories.data?.length && <small role="status">Nessuna categoria configurata.</small>}
+        </div>
         <label><span id="create-priority-label">Priorità *</span><select aria-labelledby="create-priority-label" {...field('priority')} required><option value="" disabled>Seleziona una priorità</option>{priorities.map(p => <option key={p}>{p}</option>)}</select></label>
         <label className="full-width">Descrizione del guasto *<textarea {...field('description')} required rows={5} placeholder="Descrivi il problema e indica i dettagli utili all’intervento." /></label>
       </div></fieldset>
-      <div className="form-footer"><p>L’ODL sarà creato con stato <strong>APERTO</strong>.</p><div className="heading-actions"><button type="button" className="button button-secondary" disabled={busy || analyzing || audioBusy} onClick={() => navigate('/odl')}>Annulla</button><button className="button button-primary" disabled={busy || analyzing || audioBusy} type="submit"><Icon name="plus" />{busy ? 'Creazione…' : mode === 'ai' ? 'Conferma e crea ODL' : 'Crea ODL'}</button></div></div>
+      <div className="form-footer"><p>L’ODL sarà creato con stato <strong>APERTO</strong>.</p><div className="heading-actions"><button type="button" className="button button-secondary" disabled={busy || analyzing || audioBusy} onClick={() => navigate('/odl')}>Annulla</button><button className="button button-primary" disabled={busy || analyzing || audioBusy || categories.loading || !categories.data?.length} type="submit"><Icon name="plus" />{busy ? 'Creazione…' : mode === 'ai' ? 'Conferma e crea ODL' : 'Crea ODL'}</button></div></div>
     </form>}
   </>
 }

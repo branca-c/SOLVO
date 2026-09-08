@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CreateWorkOrder } from '../pages/CreateWorkOrder'
 import { api } from '../services/api'
+import { clearCategoriesCache } from '../hooks/useCategories'
 import { order } from './fixtures'
 import type { WorkOrderDraft } from '../types/workOrder'
 
@@ -12,6 +13,10 @@ const draft: WorkOrderDraft = {
   fault_address: 'Via Roma 12', category_id: 2, category_name: 'Idraulico', priority: 'MEDIA',
   description: 'Perdita dal tubo del bagno.', warnings: ['Verifica i dati prima di confermare.'],
 }
+beforeEach(() => {
+  clearCategoriesCache()
+  vi.spyOn(api, 'categories').mockResolvedValue([{ id: 2, name: 'Idraulico', description: null }])
+})
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 it('analyzes into the editable form and creates only on explicit confirmation', async () => {
@@ -29,7 +34,7 @@ it('analyzes into the editable form and creates only on explicit confirmation', 
   expect(create).not.toHaveBeenCalled()
   expect(onCreated).not.toHaveBeenCalled()
   expect((screen.getByLabelText('Nome *') as HTMLInputElement).value).toBe('Ada')
-  expect((screen.getByLabelText('ID categoria *') as HTMLInputElement).value).toBe('2')
+  expect((screen.getByLabelText('Categoria *') as HTMLInputElement).value).toBe('2')
   expect(screen.getByText('Verifica i dati prima di confermare.')).toBeTruthy()
   await userEvent.clear(screen.getByLabelText('Cognome *'))
   await userEvent.type(screen.getByLabelText('Cognome *'), 'Bianchi')
@@ -151,4 +156,32 @@ it('records, stops microphone tracks and uploads the resulting file', async () =
   await screen.findByText('Audio registrato')
   expect(audio.mock.calls[0][0].type).toBe('audio/webm')
   vi.unstubAllGlobals()
+})
+
+it('resolves a name-only AI draft when categories finish loading later', async () => {
+  let finish!: (value: { id: number; name: string; description: null }[]) => void
+  vi.mocked(api.categories).mockImplementation(() => new Promise(resolve => { finish = resolve }))
+  vi.spyOn(api, 'draft').mockResolvedValue({ ...draft, category_id: null, category_name: '  idraulico  ' })
+  render(<CreateWorkOrder onCreated={vi.fn()} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Assistito da AI' }))
+  await userEvent.type(screen.getByLabelText('Descrizione libera del guasto'), 'Perdita')
+  await userEvent.click(screen.getByRole('button', { name: 'Analizza con AI' }))
+  await screen.findByText('Bozza pronta: rivedi e conferma i dati.')
+  finish([{ id: 2, name: 'Idraulico', description: null }])
+  await waitFor(() => expect((screen.getByLabelText('Categoria *') as HTMLSelectElement).value).toBe('2'))
+})
+
+it('resolves the draft when categories load during an outstanding analysis', async () => {
+  let categoriesReady!: (value: { id: number; name: string; description: null }[]) => void
+  let draftReady!: (value: WorkOrderDraft) => void
+  vi.mocked(api.categories).mockImplementation(() => new Promise(resolve => { categoriesReady = resolve }))
+  vi.spyOn(api, 'draft').mockImplementation(() => new Promise(resolve => { draftReady = resolve }))
+  render(<CreateWorkOrder onCreated={vi.fn()} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Assistito da AI' }))
+  await userEvent.type(screen.getByLabelText('Descrizione libera del guasto'), 'Perdita')
+  await userEvent.click(screen.getByRole('button', { name: 'Analizza con AI' }))
+  categoriesReady([{ id: 2, name: 'Idraulico', description: null }])
+  await waitFor(() => expect(api.categories).toHaveBeenCalledTimes(1))
+  draftReady(draft)
+  await waitFor(() => expect((screen.getByLabelText('Categoria *') as HTMLSelectElement).value).toBe('2'))
 })
