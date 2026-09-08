@@ -197,3 +197,20 @@ accept/reject set responded_at, while NO_RESPONSE and ESCALATED leave it null.
 History records start, accept, reject, no-response, escalation, and actual ODL
 status changes. The accepted Assignment provides the technician link without
 modifying WorkOrder. No message transport or automatic timeout is delivered.
+
+## 12. Current frontend delivery
+
+The first operator frontend includes Dashboard, ODL list, ODL detail, and manual
+ODL creation. Dashboard cards show total, APERTO, IN_CORSO, all URGENTE-priority
+orders, and combined EVASO/CHIUSO counts. Its recent table displays the latest
+eight orders. The full list has status and priority filters, opens each ODL,
+and displays category IDs because the API does not expose category names.
+Manual creation accepts the existing required fields and optional email and
+navigates to the created ODL with inline success feedback.
+
+Detail displays ODL data and reads reminders, history and assignments. The status
+action offers only the transitions in section 10 and reloads data after success.
+The frontend does not expose technician assignment actions or reminder creation.
+Loading, empty, recoverable error and success states are included. Dashboard and
+ODL navigation are functional; Tecnici and Impostazioni are disabled placeholders.
+Data is fetched on entry, refresh and successful mutations, without live updates.

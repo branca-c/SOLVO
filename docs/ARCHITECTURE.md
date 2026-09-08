@@ -220,3 +220,40 @@ API tests cover routing, duplicate/stale actions, terminal restrictions, history
 and rollback after a simulated history failure. They use SQLite; PostgreSQL's
 concurrent row-lock behavior is not exercised by this suite. This slice adds no
 transport, authentication, scheduler, availability, zone, or SLA logic.
+
+## 12. Delivered first frontend slice
+
+The React/TypeScript Vite app lives in `frontend/`. Components, four pages,
+a small fetch service, shared API types/helpers, and a cancellable resource hook
+keep the implementation local and explicit. Hash-based navigation supports
+refresh, links, and browser back/forward without a routing dependency or server
+fallback configuration. There is no global cache or client-side data store:
+page entry and the refresh action fetch current data; create navigates to detail;
+successful status changes refetch the ODL and related activity.
+
+The browser requests same-origin `/api` paths. Vite dev and preview proxy them to
+`VITE_API_BASE_URL`, loaded from `frontend/.env`, defaulting to
+`http://127.0.0.1:8000`. This connects to existing FastAPI without backend CORS
+changes. The environment value configures the local proxy, not a production
+URL embedded in the JavaScript. A standalone static build requires an external
+same-origin `/api` proxy; deployment is not implemented. No backend routes,
+schemas, models, settings, or dependencies were changed for this frontend.
+
+Dashboard derives five summary counts from the complete WorkOrder list and shows
+the latest eight. The ODL list sends status/priority filters to FastAPI. Category
+names/filtering are omitted because no category endpoint exists: category IDs
+are displayed and entered on creation. The detail retrieves ODL, reminders,
+history, and assignments; related sections have independent errors/retry states.
+Status options mirror the explicit backend map, while FastAPI validates each
+PATCH. HTTP errors appear inline; failed creation preserves entered form values.
+No mutation is retried automatically. Generic fetch errors, FastAPI detail
+strings and validation arrays are handled centrally. Navigation/filter changes
+abort stale read requests.
+
+The UI uses the binding Fresh palette, Poppins bundled as local font assets,
+indigo sidebar, aqua actions, white surfaces, compact data tables and text badges.
+Five summary cards follow the explicit frontend task rather than the four-card
+reference composition. Small screens use stacked table rows, keyboard users can
+open each ODL by its link, forms have labels, and feedback uses live regions.
+Technicians/settings are disabled placeholders. Vitest and Testing Library cover
+key page flows and helpers; `tsc --noEmit` and `vite build` are quality gates.

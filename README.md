@@ -152,3 +152,57 @@ History events are `ASSIGNMENT_STARTED`, `ASSIGNMENT_ACCEPTED`,
 `ASSIGNMENT_REJECTED`, `ASSIGNMENT_NO_RESPONSE`, `ASSIGNMENT_ESCALATED`, and
 `STATUS_CHANGED` when acceptance changes the ODL status. Each event identifies
 the relevant attempt/technician; rejection notes are also retained.
+
+## Frontend locale
+
+Il primo frontend SOLVO usa React, TypeScript e Vite. Richiede Node.js 22.12+
+(o una versione compatibile successiva). Avvia FastAPI sulla porta 8000 seguendo
+le istruzioni backend sopra, con migrazioni applicate e categorie già configurate.
+Poi, in un secondo terminale:
+
+```sh
+cd frontend
+npm ci
+cp .env.example .env
+npm run dev
+```
+
+Apri `http://127.0.0.1:5173`. In `frontend/.env`, `VITE_API_BASE_URL` è l’origine
+FastAPI, senza `/api` finale; il default è `http://127.0.0.1:8000`. Riavvia Vite
+quando cambi la configurazione. Il browser chiama `/api` sulla stessa origine e
+il proxy Vite inoltra le richieste a FastAPI: non sono necessarie modifiche CORS
+al backend. Le variabili frontend non devono contenere segreti.
+
+Le pagine disponibili sono Dashboard (`#/`), ODL (`#/odl`), creazione
+(`#/odl/nuovo`) e dettaglio (`#/odl/{id}`). Le voci Tecnici e Impostazioni sono
+placeholder disabilitati. Dashboard e lista caricano dati reali da FastAPI;
+la Dashboard mostra cinque conteggi e gli otto ODL più recenti. Il conteggio
+Urgenti comprende tutti gli stati; Evasi/Chiusi somma EVASO e CHIUSO.
+
+La lista filtra per stato e priorità sul server. Non essendoci un endpoint
+categorie, il frontend mostra `Categoria #ID` e richiede un ID esistente nel form;
+non aggiunge categorie o filtri inventati. Il dettaglio mostra ODL, solleciti,
+history e assegnazioni, con errori e ricaricamento indipendenti delle sezioni.
+Il form crea un ODL e apre il suo dettaglio con conferma inline. Le azioni di
+stato propongono solo le transizioni consentite; il backend resta autorevole e
+le modifiche riuscite ricaricano ODL e history. Non vengono avviate assegnazioni
+né creati solleciti dal frontend in questa slice.
+
+Verifiche frontend:
+
+```sh
+cd frontend
+npm run typecheck
+npm test
+npm run build
+npm run preview
+```
+
+La preview è disponibile su `http://127.0.0.1:4173` e usa lo stesso proxy locale.
+La build statica è in `frontend/dist` (ignorata da Git). Il proxy appartiene ai
+server Vite di sviluppo/preview: per servire i file statici occorre inoltrare
+`/api` a FastAPI sulla stessa origine. Non è stata introdotta una configurazione
+di deployment. I test Vitest verificano componenti, form, transizioni, conteggi,
+filtri e contratti del client usando risposte controllate; nessun dato fittizio
+è incluso nel runtime dell’applicazione. Poppins è distribuito localmente nel
+bundle; non vengono caricati font da servizi esterni.
