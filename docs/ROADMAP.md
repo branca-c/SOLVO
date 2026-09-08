@@ -70,7 +70,7 @@ Exit: a clean checkout can run and demonstrate the entire local MVP reliably.
 ### Step 8 — External integrations and AWS deployment (deferred)
 
 - The audio transcription port now has a local mock; a future Amazon Transcribe adapter must preserve temporary-data handling, validated transcripts and explicit draft confirmation.
-- Replace local providers with S3 audio, Amazon Transcribe (`it-IT`), Amazon Bedrock structured extraction, and Twilio WhatsApp Sandbox adapters.
+- Replace local providers with S3 audio, Amazon Transcribe (`it-IT`), Amazon Bedrock structured extraction, adapters. The explicitly triggered Twilio WhatsApp Sandbox adapter is already delivered with technician action links; production WhatsApp Business templates remain future scope.
 - For text extraction, target a low-cost Claude Haiku-class model on Bedrock behind the existing AIProvider interface. Select the model/region at implementation time; preserve output validation, database category resolution, local mock tests, and explicit user confirmation. Do not grant the model database or workflow tools.
 - Deploy the static frontend through S3/CloudFront, one Dockerized FastAPI/WebSocket backend on EC2, and PostgreSQL on RDS.
 - Configure least-privilege IAM, Secrets Manager, CloudWatch, HTTPS, backups, and AWS Budgets.

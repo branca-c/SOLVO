@@ -278,3 +278,49 @@ remains available if recording is unsupported or denied. Review the transcript a
 edit the shared form, then select **Conferma e crea ODL**. Audio analysis never creates
 an ODL. Audio is temporary only; no files or audio records are retained by this slice.
 Amazon Transcribe remains the future production provider described in the roadmap.
+
+### Technician action links and WhatsApp Sandbox
+
+Configure `ASSIGNMENT_ACTION_SECRET` with at least 32 random bytes; generate a value
+with `python -c "import secrets; print(secrets.token_urlsafe(32))"` and save it only in
+local `.env`. There is no built-in secret. Missing/short placeholder configuration
+makes action-link endpoints fail closed with 503. Tokens expire after
+`TECHNICIAN_ACTION_TOKEN_TTL_MINUTES=1440` (1–10080 supported); rotating the secret
+invalidates all existing links. `TECHNICIAN_ACTION_BASE_URL=http://127.0.0.1:5173`
+is the frontend origin, without `/tecnico`. On a smartphone use a reachable frontend
+host instead of loopback, and start Vite with `npm run dev -- --host 0.0.0.0`.
+The host must serve the SPA for `/tecnico/assegnazione/*` (Vite does this locally).
+
+1. Start an assignment using the existing assignment API.
+2. In ODL detail, click **Invia WhatsApp**, or POST `/api/assignments/{id}/notify`.
+3. With default `WHATSAPP_PROVIDER=mock`, no network request occurs. The response
+   reports `simulated` and includes `action_url`; **Apri link tecnico** opens it.
+4. The mobile page shows only intervention details, with **Accetta intervento** and
+   **Rifiuta**, followed by optional notes and confirmation. It calls the public
+   endpoints with the signed token. Acceptance/rejection reuse existing routing
+   transactions. No next technician means 409 and the previous attempt remains pending.
+5. A successful rejection creates the next pending assignment; notification of that
+   next assignment is still an explicit operator action. Refresh the operator page
+   to see technician changes. There is no WebSocket/realtime in this slice.
+
+For an actual Sandbox submission set `WHATSAPP_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`,
+`TWILIO_AUTH_TOKEN`, and `TWILIO_WHATSAPP_FROM=whatsapp:+...` to your Sandbox values.
+Configure technician phones in international `+...` format. The recipient must join
+your Sandbox by sending its join keyword, then send a message to open the 24-hour
+customer-service window for free-form messages. See [Twilio Sandbox documentation](https://www.twilio.com/docs/whatsapp/sandbox).
+No production templates are implemented. HTTPX submits to Twilio with server-side
+credentials and a 10-second timeout; `submitted` means provider acceptance, not
+confirmed WhatsApp delivery. Tests use mocked HTTP transport; no real messages are sent.
+
+Links are bearer capabilities: anyone holding one can view that assignment and act
+while pending. Do not share them publicly or log them. Use HTTPS when serving beyond
+localhost and redact `/api/public/assignments/*` and technician paths in access logs.
+The SPA uses no-referrer and public data responses use no-store. Existing operator
+APIs remain unauthenticated in this MVP: keep them on a trusted network; signed public
+links do not add authorization to those separate APIs.
+
+Notification history records provider acceptance/simulation without the token,
+message body or credentials. Provider errors roll back local history and leave the
+assignment unchanged. External submission and database commit are not an atomic
+transaction: a timeout or commit failure can leave uncertain delivery. There is no
+automatic retry; inspect Twilio before explicitly resending to avoid duplicates.

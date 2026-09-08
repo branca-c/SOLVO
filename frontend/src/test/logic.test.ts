@@ -57,3 +57,18 @@ it('uploads multipart audio without overriding the browser boundary', async () =
   expect(options.body.get('audio')).toBe(file)
   expect(options.headers['Content-Type']).toBeUndefined()
 })
+
+it('uses token-scoped public action paths and the explicit notify endpoint', async () => {
+  const fetcher = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ id: 1 })))
+  vi.stubGlobal('fetch', fetcher)
+  await api.publicAssignment('v1.token')
+  await api.publicAccept('v1.token')
+  await api.publicReject('v1.token', 'Note facoltative')
+  await api.notifyAssignment(1)
+  expect(fetcher.mock.calls.map(call => call[0])).toEqual([
+    '/api/public/assignments/v1.token', '/api/public/assignments/v1.token/accept',
+    '/api/public/assignments/v1.token/reject', '/api/assignments/1/notify',
+  ])
+  expect(fetcher.mock.calls[1][1].method).toBe('POST')
+  expect(JSON.parse(fetcher.mock.calls[2][1].body)).toEqual({ rejection_notes: 'Note facoltative' })
+})

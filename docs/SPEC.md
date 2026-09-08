@@ -196,7 +196,7 @@ Assignment mutations and related history commit together. sent_at is server-side
 accept/reject set responded_at, while NO_RESPONSE and ESCALATED leave it null.
 History records start, accept, reject, no-response, escalation, and actual ODL
 status changes. The accepted Assignment provides the technician link without
-modifying WorkOrder. No message transport or automatic timeout is delivered.
+modifying WorkOrder. Notification is explicit through the provider endpoint described below; no automatic timeout is delivered.
 
 ## 12. Current frontend delivery
 
@@ -244,7 +244,7 @@ Contacts and address are never filled with invented values.
 The frontend shows analysis loading/errors, preserves the source text on failure,
 populates the existing form on success, and allows editing every creation field.
 Only the final confirmation sends the normal POST and navigates to the new ODL.
-Text and audio drafts require confirmation; automatic creation and external transport are not included.
+Text and audio drafts require confirmation; automatic creation is not included.
 
 ### Delivered audio intake
 
@@ -258,3 +258,31 @@ The mock does not decode or recognize speech: it returns a configured demonstrat
 text and labels the resulting draft with a simulation warning. Uploaded audio is temporary.
 The operator can upload or record, inspect the transcript, edit the existing form,
 and explicitly confirm creation through the normal WorkOrder endpoint.
+
+## 14. Delivered technician page and notification slice
+
+Public `GET /api/public/assignments/{token}` exposes only assignment ID/status,
+technician name, ODL code/status, requester name/phone, address, category, priority,
+description and rejection notes. `POST .../accept` and `POST .../reject` reuse the
+same current-PENDING and terminal-ODL checks and transactions as operator actions.
+Refusal notes remain optional. Public rejection returns the original rejected
+assignment, never the successor's details or link. Repeated/stale actions return
+409 with no duplicate history. Exhausted routing leaves PENDING unchanged with 409.
+Malformed/tampered/expired tokens and missing assignments return 404; invalid bodies
+return 422. There is no login system in this delivery.
+
+`POST /api/assignments/{id}/notify` is an explicit operator action for the current
+PENDING assignment on a nonterminal ODL. It builds the signed mobile link and sends
+SOLVO, ODL code, priority, address and category to the assigned technician. Creation,
+rejection and escalation never send messages automatically. The response includes
+provider, message ID, submission status and action URL. A meaningful history event
+records successful submission or simulation. Provider errors return 503 without a
+false success history event. Mock is default and performs no external calls; the
+Twilio adapter supports Sandbox free-form submission within its service window.
+Submission does not claim confirmed delivery; no receipt webhook is implemented.
+
+The mobile route `/tecnico/assegnazione/:token` has no operator sidebar, shows
+large accept/refuse actions and optional refusal notes, handles invalid links and
+conflicts inline, and displays completed states. ODL detail highlights the current/
+latest assignment and offers **Invia WhatsApp** for the pending attempt with inline
+feedback and its action link. Operator refresh is manual; no WebSocket is implemented.

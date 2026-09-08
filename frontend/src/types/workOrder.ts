@@ -86,3 +86,24 @@ export interface AudioWorkOrderDraft {
   transcript: string
   draft: WorkOrderDraft
 }
+
+export interface PublicAssignment {
+  id: number
+  status: Assignment['status']
+  technician_name: string
+  work_order_code: string
+  requester_name: string
+  requester_phone: string
+  fault_address: string
+  category: string
+  priority: Priority
+  description: string
+  work_order_status: WorkOrderStatus
+  rejection_notes: string | null
+}
+export interface NotificationResult {
+  provider: string
+  message_id: string
+  status: string
+  action_url: string
+}

@@ -307,3 +307,41 @@ fails explicitly (503); it never silently switches providers.
 The React audio component releases microphone tracks on stop/error/unmount and aborts
 pending analysis on unmount. JSON and multipart requests share the API client;
 multipart Content-Type is left to the browser. All intake modes share one editable form.
+
+## 14. Signed technician actions and explicit messaging
+
+No model/migration change is required. The standard-library HMAC-SHA256 token signs
+`v1.assignment_id.expiry` with a purpose prefix and a separate environment secret.
+Validation enforces canonical syntax, a constant-time signature comparison and
+expiry before database lookup. The token is signed, not encrypted; it contains no
+personal data or secret. A shared strong secret persists across restarts/workers;
+rotation revokes all links. There is no per-token revocation table. Existing
+assignment state checks prevent repeated or superseded mutations.
+
+Public routes serialize a dedicated allowlist schema and call the original
+assignment service for accept/reject. The helper builds URLs using the configured
+frontend base. Public data and link responses are no-store; the frontend sets
+no-referrer. Do not include bearer links in audit descriptions or application logs;
+access logs at the server/proxy must redact token paths. Operator APIs have no login
+in this delivery and must remain on a trusted network; token validation protects
+the public endpoints only.
+
+A WhatsApp protocol receives only recipient and message. Mock returns a deterministic
+hash-based ID without HTTP. Twilio uses the existing HTTPX dependency with bounded
+network timeout, server-side Basic authentication, fixed Twilio API host and
+WhatsApp-prefixed international addresses. Credentials are SecretStr configuration;
+provider response/errors are sanitized. No SDK, scheduler, webhook or transport is
+introduced into routing. Unknown providers and incomplete configuration fail closed.
+
+Notification orchestration reuses the parent-row lock/current-PENDING check so
+assignment transitions cannot race an active submission on PostgreSQL. Successful
+provider acceptance/simulation and its history commit together locally. Sending to
+an external service cannot be rolled back with the database: timeout or commit
+failure may have uncertain external delivery. No automatic retries are attempted;
+explicit repeat notify requests can send again. Exactly-once external delivery is
+not claimed. The UI distinguishes simulation/submission from confirmed delivery.
+
+The existing hash navigation remains for operators. A pathname technician route is
+recognized before that navigation and renders the mobile page without Layout.
+SPA fallback must serve that path. Both public actions share the API client and
+return the same limited assignment projection. No WebSocket/realtime is delivered.
