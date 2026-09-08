@@ -78,7 +78,7 @@ Use versioned JSON REST endpoints under `/api/v1`. Exact payloads are defined du
 
 Mutation commands accept an idempotency key where duplicate delivery or tapping is plausible. Errors use one stable envelope with machine code, human message, field details, and correlation ID.
 
-WebSocket messages are post-commit notifications containing event name, ODL identifier, version, and the minimal changed representation. Clients reconnect and refetch; the socket is not the source of truth.
+WebSocket messages are post-commit invalidations containing event type, ODL identifier and UTC timestamp, without personal data or a changed-record payload. Clients reconnect and refetch; the socket is not the source of truth.
 
 ## 6. Provider strategy
 
@@ -344,4 +344,34 @@ not claimed. The UI distinguishes simulation/submission from confirmed delivery.
 The existing hash navigation remains for operators. A pathname technician route is
 recognized before that navigation and renders the mobile page without Layout.
 SPA fallback must serve that path. Both public actions share the API client and
-return the same limited assignment projection. No WebSocket/realtime is delivered.
+return the same limited assignment projection. Realtime is delivered by the following single-instance slice.
+
+## 15. Single-instance realtime implementation
+
+The in-memory ConnectionManager owns connected sockets and serializes writes per
+client on the ASGI event loop. Synchronous service threads submit broadcasts through
+asyncio.run_coroutine_threadsafe; no database session or ORM instance crosses that
+boundary. Sends run concurrently across clients with a two-second bound per send
+(including lock wait). Failed clients are removed and closed best-effort.
+WebSocket input is ignored; it cannot trigger workflow changes or relay messages.
+
+Services publish scalar event metadata after commit and before response refresh.
+The assignment transaction helper collects event tuples and drains them only after
+commit succeeds, outside its rollback handler. Public technician routes still use
+those services. The publisher catches scheduling/send failures and logs no payloads;
+committed business data is never reverted because of WebSocket failure. The existing
+delete operation emits a deletion invalidation so Dashboard/detail do not stay stale.
+This is not an outbox: a process failure can lose events and delivery order across
+concurrent transactions is not guaranteed. Re-fetching is authoritative.
+
+Each active Dashboard/detail page has one socket with cleanup on unmount. The
+frontend derives ws/wss from its origin and Vite proxies upgrades to the existing
+configured backend. The client ignores unknown/malformed messages, uses bounded
+reconnect backoff and refetches after every connection. A hook coalesces events and
+filters detail IDs; no client-side event store exists. Activity refresh preserves
+mounted controls and previous data while replacing fetched results.
+
+Run only one backend worker/instance. Connection memory is process-local and has no
+shared pub/sub, persistence or replay. The endpoint shares the trusted-network scope
+of existing unauthenticated operator APIs. Further scaling requirements are recorded
+only in ROADMAP.

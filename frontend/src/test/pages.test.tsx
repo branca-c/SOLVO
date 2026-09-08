@@ -39,7 +39,7 @@ it('applies server filters and resets them', async () => {
 it('shows loading, recoverable errors, and an empty state', async () => {
   vi.mocked(api.list).mockRejectedValueOnce(new Error('Servizio non disponibile')).mockResolvedValueOnce([])
   render(<Dashboard />)
-  expect(screen.getByRole('status').textContent).toContain('Caricamento')
+  expect(screen.getByText('Caricamento ODL…').textContent).toContain('Caricamento')
   expect(await screen.findByRole('alert')).toBeTruthy()
   await userEvent.click(screen.getByRole('button', { name: 'Riprova' }))
   expect(await screen.findByText('Nessun ODL da mostrare')).toBeTruthy()

@@ -27,7 +27,7 @@ def public_details(db: Session, assignment_id: int) -> PublicAssignment:
 def notify(db: Session, assignment_id: int, settings: Settings) -> NotificationResponse:
     # Use the same parent lock and current-PENDING check as assignment actions.
     # HTTP submission cannot be rolled back if the subsequent database commit fails.
-    with assignments._transaction(db):
+    with assignments._transaction(db) as events:
         assignment, order, _ = assignments._action_target(db, assignment_id)
         url = action_url(assignment.id, settings)
         provider = create_whatsapp_provider(settings)
@@ -37,6 +37,7 @@ def notify(db: Session, assignment_id: int, settings: Settings) -> NotificationR
             db, order.id, 'ASSIGNMENT_NOTIFICATION_SENT',
             f'Assegnazione #{assignment.id}: notifica {result.provider}, {result.status}, riferimento {result.message_id}.',
         )
+        events.append(('assignment.notification_sent', order.id))
     return NotificationResponse(
         provider=result.provider, message_id=result.message_id, status=result.status, action_url=url,
     )

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
+from app.services.realtime import EventType, publish
 from app.domain.assignment_routing import RoutingConflictError, select_technician
 from app.domain.work_order_status import validate_transition
 from app.models import (
@@ -17,14 +18,17 @@ class AssignmentResourceNotFoundError(Exception):
 
 
 @contextmanager
-def _transaction(db: Session) -> Iterator[None]:
+def _transaction(db: Session) -> Iterator[list[tuple[EventType, int]]]:
     # The service owns the transaction, including dependency/query autobegin.
+    events: list[tuple[EventType, int]] = []
     try:
-        yield
+        yield events
         db.commit()
     except Exception:
         db.rollback()
         raise
+    for event_type, order_id in events:
+        publish(event_type, order_id)
 
 
 def _work_order(db: Session, work_order_id: int, *, lock: bool = False) -> WorkOrder:
@@ -89,7 +93,7 @@ def _new_attempt(
 
 
 def start(db: Session, work_order_id: int) -> Assignment:
-    with _transaction(db):
+    with _transaction(db) as events:
         work_order = _work_order(db, work_order_id, lock=True)
         attempts = _attempts(db, work_order.id)
         if _pending(attempts):
@@ -98,6 +102,7 @@ def start(db: Session, work_order_id: int) -> Assignment:
             raise RoutingConflictError("Il routing è già stato avviato per questo ODL")
         technician = _candidate(db, work_order, attempts)
         assignment = _new_attempt(db, work_order, technician, 1)
+        events.append(('assignment.created', work_order.id))
     db.refresh(assignment)
     return assignment
 
@@ -127,8 +132,9 @@ def _action_target(db: Session, assignment_id: int) -> tuple[Assignment, WorkOrd
 
 
 def accept(db: Session, assignment_id: int) -> Assignment:
-    with _transaction(db):
+    with _transaction(db) as events:
         assignment, work_order, _ = _action_target(db, assignment_id)
+        events.append(('assignment.accepted', work_order.id))
         old_status = work_order.status
         validate_transition(old_status, WorkOrderStatus.IN_CORSO)
         assignment.status = AssignmentStatus.ACCEPTED
@@ -138,6 +144,7 @@ def accept(db: Session, assignment_id: int) -> Assignment:
             f"Assegnazione #{assignment.id} accettata dal tecnico #{assignment.technician_id}",
         )
         if old_status != WorkOrderStatus.IN_CORSO:
+            events.append(('work_order.status_changed', work_order.id))
             work_order.status = WorkOrderStatus.IN_CORSO
             _history(
                 db, work_order.id, "STATUS_CHANGED",
@@ -150,7 +157,7 @@ def accept(db: Session, assignment_id: int) -> Assignment:
 def _advance(
     db: Session, assignment_id: int, outcome: AssignmentStatus, rejection_notes: str | None = None,
 ) -> Assignment:
-    with _transaction(db):
+    with _transaction(db) as events:
         assignment, work_order, attempts = _action_target(db, assignment_id)
         # Find a successor before changing anything; exhaustion leaves the prior state intact.
         technician = _candidate(db, work_order, attempts, after_id=assignment.technician_id)
@@ -164,6 +171,8 @@ def _advance(
             description += f". Note: {rejection_notes}"
         _history(db, work_order.id, f"ASSIGNMENT_{outcome.value}", description)
         _new_attempt(db, work_order, technician, assignment.attempt_number + 1)
+        events.append(('assignment.rejected' if outcome == AssignmentStatus.REJECTED else 'assignment.no_response', work_order.id))
+        events.append(('assignment.created', work_order.id))
     db.refresh(assignment)
     return assignment
 
@@ -177,7 +186,7 @@ def no_response(db: Session, assignment_id: int) -> Assignment:
 
 
 def escalate_team_leader(db: Session, work_order_id: int) -> Assignment:
-    with _transaction(db):
+    with _transaction(db) as events:
         work_order = _work_order(db, work_order_id, lock=True)
         attempts = _attempts(db, work_order.id)
         technician = _candidate(db, work_order, attempts, team_leader_only=True)
@@ -193,5 +202,6 @@ def escalate_team_leader(db: Session, work_order_id: int) -> Assignment:
         )
         number = attempts[-1].attempt_number + 1 if attempts else 1
         assignment = _new_attempt(db, work_order, technician, number)
+        events.extend([('assignment.escalated', work_order.id), ('assignment.created', work_order.id)])
     db.refresh(assignment)
     return assignment

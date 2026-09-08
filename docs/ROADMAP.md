@@ -56,7 +56,7 @@ Exit: requester-to-technician flow works locally on desktop and smartphone viewp
 ### Step 6 — Operator Control Center and real time
 
 - Build the reference-style sidebar, header/search, summary cards, recent/all ODL table, filters, detail/history, operator actions, and urgent people-risk call treatment.
-- Add post-commit WebSocket updates and reconnect/refetch behavior.
+- Delivered: single-instance in-memory WebSocket updates after commit, Dashboard/detail refetch, and reconnect with backoff.
 
 Exit: technician actions update the Control Center without refresh; no SLA or "tempo aperto" appears.
 
@@ -81,9 +81,9 @@ Exit: the same workflow runs in the reference cloud topology with documented tea
 ## Future capabilities (not MVP)
 
 - Direct telephone intake with Amazon Connect and streaming transcription.
-- Horizontal backend scaling behind an Application Load Balancer.
+- Horizontal backend scaling behind an Application Load Balancer, including WebSocket upgrade support, connection/idle-timeout handling and draining, belongs to future AWS architecture.
 - Multi-Availability-Zone compute and stronger disaster recovery.
-- Redis/ElastiCache Pub/Sub for multi-instance WebSocket fan-out.
+- Multiple backend workers/instances require shared pub/sub such as Redis/ElastiCache for WebSocket fan-out; the delivered in-memory manager cannot synchronize them.
 - Event-driven processing with SQS/EventBridge.
 - Selective serverless components with API Gateway/Lambda where justified.
 - Enterprise authentication with Cognito, MFA, and more granular RBAC.

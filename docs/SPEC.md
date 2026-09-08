@@ -213,7 +213,7 @@ action offers only the transitions in section 10 and reloads data after success.
 The frontend does not expose technician assignment actions or reminder creation.
 Loading, empty, recoverable error and success states are included. Dashboard and
 ODL navigation are functional; Tecnici and Impostazioni are disabled placeholders.
-Data is fetched on entry, refresh and successful mutations, without live updates.
+Data is fetched on entry, refresh and successful mutations; Dashboard and ODL detail also refresh through the realtime slice below.
 
 
 ## 13. Current AI-assisted text intake delivery
@@ -285,4 +285,25 @@ The mobile route `/tecnico/assegnazione/:token` has no operator sidebar, shows
 large accept/refuse actions and optional refusal notes, handles invalid links and
 conflicts inline, and displays completed states. ODL detail highlights the current/
 latest assignment and offers **Invia WhatsApp** for the pending attempt with inline
-feedback and its action link. Operator refresh is manual; no WebSocket is implemented.
+feedback and its action link. Dashboard and ODL detail now refresh through WebSocket.
+
+## 15. Delivered realtime slice
+
+One backend instance broadcasts invalidation events on `/ws/work-orders` after
+committed WorkOrder/assignment mutations. The JSON fields are `type`,
+`work_order_id` and UTC `timestamp`; no private payload is broadcast.
+Types: work_order.created, work_order.updated, work_order.deleted,
+work_order.status_changed, reminder.created, assignment.created,
+assignment.accepted, assignment.rejected, assignment.no_response,
+assignment.escalated and assignment.notification_sent.
+A refusal/no-response/escalation also emits assignment.created for its successor;
+acceptance emits status_changed only when the ODL status actually changes.
+No-op updates, invalid actions, provider failures and rolled-back commits emit nothing.
+Public accept/reject inherit events from the existing service, without duplicate logic.
+
+Dashboard refreshes its current data for these events. Detail refreshes ODL,
+reminders, history and assignments for its own ID only. A short 150 ms window groups
+bursts; reconnect also refreshes data to cover events lost while disconnected.
+The UI shows a small connection indicator and retries with 3–15 second backoff.
+Manual refresh is still available. This is best-effort single-instance delivery,
+with no authentication, shared message bus, durable replay or background scheduler.

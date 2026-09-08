@@ -300,8 +300,7 @@ The host must serve the SPA for `/tecnico/assegnazione/*` (Vite does this locall
    endpoints with the signed token. Acceptance/rejection reuse existing routing
    transactions. No next technician means 409 and the previous attempt remains pending.
 5. A successful rejection creates the next pending assignment; notification of that
-   next assignment is still an explicit operator action. Refresh the operator page
-   to see technician changes. There is no WebSocket/realtime in this slice.
+   next assignment is still an explicit operator action. Dashboard and ODL detail now refresh automatically through the realtime slice below.
 
 For an actual Sandbox submission set `WHATSAPP_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`,
 `TWILIO_AUTH_TOKEN`, and `TWILIO_WHATSAPP_FROM=whatsapp:+...` to your Sandbox values.
@@ -324,3 +323,31 @@ message body or credentials. Provider errors roll back local history and leave t
 assignment unchanged. External submission and database commit are not an atomic
 transaction: a timeout or commit failure can leave uncertain delivery. There is no
 automatic retry; inspect Twilio before explicitly resending to avoid duplicates.
+
+### Realtime ODL updates
+
+Run **one backend process/worker** for this MVP. `/ws/work-orders` accepts WebSocket
+connections and broadcasts small invalidation events with `type`, `work_order_id`
+and a UTC `timestamp`. Events contain no contact details, notes or action tokens.
+Dashboard refetches its WorkOrders; detail refetches the ODL, reminders, history and
+assignments only for matching IDs. The public technician page uses the same assignment
+services, so its acceptance/refusal updates the operator view automatically.
+
+Vite proxies `/ws` (including WebSocket upgrades) to the existing `VITE_API_BASE_URL`,
+just as it proxies `/api`. The browser connects through its current frontend origin,
+using `ws://` for HTTP and `wss://` for HTTPS. No extra environment variable is required.
+Any non-Vite host must forward `/ws/work-orders` upgrades to FastAPI as well as `/api`.
+
+A subtle Live/Riconnessione/Offline indicator shows connection state. Retries wait
+3, 6, 12, then at most 15 seconds, resetting after connection. A successful connection
+triggers a refetch to cover missed events. Events arriving together are grouped for
+150 ms. Navigation closes the connection and cancels reconnect/refresh timers.
+Manual refresh remains available. The ODL list and technician page are not subscribed.
+
+Publishing occurs only after successful commit; failed commits and no-op changes
+publish nothing. Broadcast failure never rolls back committed data. Broken/slow
+clients are removed and errors logged without payloads. Events are best-effort:
+there is no durable queue, replay or cross-process fan-out. The in-memory manager
+is single-instance only and this unauthenticated operator feed belongs on the same
+trusted network as the operator APIs. Multi-instance pub/sub and AWS scaling are
+tracked in ROADMAP; neither is implemented here.
