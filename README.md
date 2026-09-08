@@ -2,7 +2,7 @@
 
 SOLVO is an AI-assisted work-order and facility service desk. A requester describes a fault by text or audio, reviews an editable structured ODL (Ordine di Lavoro) draft, and confirms it. Deterministic backend rules route the confirmed ODL to technicians, while operators monitor progress in a real-time Control Center.
 
-This repository is currently at **Step 0: project foundation**. It contains specifications and conventions only—no application code or AWS implementation yet.
+The backend contains a FastAPI health endpoint, SQLAlchemy models/migrations, and the WorkOrder CRUD API slice of Step 3. The complete Step 3 workflow is not delivered.
 
 ## Source of truth
 
@@ -27,26 +27,45 @@ When documents conflict, the PDF governs functional/technical intent and the PNG
 - Local deterministic providers come first; external/AWS integrations are deferred.
 - No SLA or "tempo aperto" is part of the MVP.
 
-## Current repository
+## Backend development
 
-```text
-.
-├── AGENTS.md
-├── README.md
-├── .env.example
-├── .gitignore
-└── docs/
-    ├── ARCHITECTURE.md
-    ├── DESIGN_SYSTEM.md
-    ├── ROADMAP.md
-    ├── SPEC.md
-    └── design/              # supplied PDF and PNG references
+Install `backend/requirements.txt` in a virtual environment and configure
+`DATABASE_URL` using `.env.example`. From `backend/`, run `alembic upgrade head`
+and `uvicorn app.main:app --reload`. Categories must already exist in the database.
+Interactive API documentation is available at `/docs`; health remains `/health`.
+
+Run the full backend suite from the repository root:
+
+```sh
+backend/.venv/bin/python -m pytest backend/tests -q
 ```
 
-Application directories will be introduced only when their roadmap step begins.
+API tests use an isolated SQLite database with foreign keys enabled and override
+the session dependency. They do not require PostgreSQL, but do not verify
+PostgreSQL-specific behavior. No formatting, lint, or type-check tooling is
+currently configured in the backend.
 
-## Development status
+## WorkOrder API
 
-Do not install dependencies or attempt to run the application yet: there is intentionally no runtime at this stage. The next authorized step is **Step 1 — Repository and local toolchain** in `docs/ROADMAP.md`.
+| Method | Path | Result |
+|---|---|---|
+| POST | `/api/work-orders` | Create ODL, 201 |
+| GET | `/api/work-orders` | List newest first, 200; optional `status`, `priority`, `category_id` filters combine with AND |
+| GET | `/api/work-orders/{id}` | Read ODL, 200 |
+| PATCH | `/api/work-orders/{id}` | Update supplied editable fields, 200 |
+| PATCH | `/api/work-orders/{id}/status` | Set any valid ODL status, 200 |
+| DELETE | `/api/work-orders/{id}` | Physically delete ODL and cascading related records, 204 |
 
-For later local configuration, copy `.env.example` to `.env` and replace development secrets. `.env` files are ignored by Git.
+Create requires `user_first_name`, `user_last_name`, `user_phone`, `fault_address`,
+`category_id`, `priority`, and `description`; `user_email` is optional. Generic
+PATCH accepts only these fields. Omitted fields are preserved; only email can be
+explicitly cleared with `null`. Unknown fields, invalid enums, and nonexistent
+categories return 422. Missing ODLs return 404.
+
+The server generates `SOLVO-YYYYMMDD-XXXXXXXXXXXXXXXX` codes using the UTC date
+and 16 random uppercase hexadecimal characters from a UUID; the database enforces
+uniqueness. Status starts at `APERTO`, the reminder counter starts at zero, and
+timestamps are server-managed. Creation and actual status changes record history
+atomically. Status updates have no workflow restrictions in this slice.
+
+See `docs/ARCHITECTURE.md` section 10 for the delivered scope and decisions.

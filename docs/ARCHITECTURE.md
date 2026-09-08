@@ -123,3 +123,27 @@ The reference architecture maps the static frontend to S3/CloudFront, the contai
 
 This is a target mapping only. No cloud resource, SDK integration, credential, or deployment automation belongs in the project until its explicit roadmap step.
 
+
+## 10. Delivered WorkOrder API slice (2026-09-08)
+
+The explicitly requested CRUD slice uses `/api/work-orders` and integer IDs from
+existing SQLAlchemy models. This supersedes the `/api/v1` convention for these
+endpoints. Pydantic schemas reject unknown input fields; synchronous thin routes
+use the existing `get_db` session dependency and a dedicated application service
+that owns SQLAlchemy queries and commits. No separate repository is necessary
+for this small slice. FastAPI's standard `detail` errors are used here.
+
+Creation sets `APERTO` and `reminders_count = 0`; database defaults generate
+creation/update timestamps. Codes use `SOLVO-YYYYMMDD-XXXXXXXXXXXXXXXX`, with a
+UTC date and 16 uppercase random UUID hexadecimal characters, protected by the
+existing database unique constraint. Categories must exist; the current category
+model has no active flag. The existing stored reminder counter is read-only
+through this API.
+
+The dedicated status endpoint accepts any declared status without transition or
+actor restrictions, as explicitly requested for this slice. Creation and actual
+status changes append history entries in the same transaction; repeated writes
+of the same status do not append duplicate entries. No history endpoint is added.
+Deletion is physical and uses existing ORM cascades, including deletion of the
+ODL's history; history is otherwise append-only. Models and migrations are
+unchanged. Authentication and authorization are not delivered in this slice.

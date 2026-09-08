@@ -143,3 +143,14 @@ The MVP is acceptable when a repeatable 2–3 minute demo can:
 7. demonstrate the urgent/people-risk treatment;
 8. run without AWS by using local provider implementations.
 
+
+## 10. Current WorkOrder CRUD delivery
+
+The explicitly scoped WorkOrder API implementation uses the existing persistence
+models and the contract documented in `README.md`. For this delivery, status is
+set through a dedicated enum-only endpoint without the workflow restrictions in
+section 6. The existing `reminders_count` column starts at zero and is not API
+editable. Category validation checks existence because the existing model has no
+active flag. Creation and status changes record history atomically; physical ODL
+deletion removes related history through existing cascades. This slice does not
+implement the complete product flow described above.
