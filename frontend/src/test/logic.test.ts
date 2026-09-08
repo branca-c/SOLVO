@@ -46,3 +46,14 @@ describe('API contracts', () => {
     await expect(api.list()).rejects.toThrow('Impossibile completare la richiesta')
   })
 })
+
+it('uploads multipart audio without overriding the browser boundary', async () => {
+  const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ transcript: 'demo', draft: {} })))
+  vi.stubGlobal('fetch', fetcher)
+  const file = new File(['audio'], 'fault.wav', { type: 'audio/wav' })
+  await api.audioDraft(file)
+  const [path, options] = fetcher.mock.calls[0]
+  expect(path).toBe('/api/ai/work-order-draft-audio')
+  expect(options.body.get('audio')).toBe(file)
+  expect(options.headers['Content-Type']).toBeUndefined()
+})

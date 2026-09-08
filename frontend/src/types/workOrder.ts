@@ -81,3 +81,8 @@ export interface WorkOrderDraft {
   description: string
   warnings: string[]
 }
+
+export interface AudioWorkOrderDraft {
+  transcript: string
+  draft: WorkOrderDraft
+}

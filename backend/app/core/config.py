@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import PostgresDsn
+from pydantic import Field, PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     app_log_level: str = "INFO"
     database_url: PostgresDsn
     ai_provider: str = "mock"
+    transcription_provider: str = "mock"
+    transcription_mock_text: str = "Perdita di acqua dal tubo del bagno."
+    max_audio_upload_mb: int = Field(default=10, ge=1, le=25)
 
     model_config = SettingsConfigDict(
         env_file=(PROJECT_ROOT / ".env", ".env"),

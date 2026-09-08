@@ -292,3 +292,18 @@ confirmation calls `POST /api/work-orders`; no new creation endpoint exists.
 Mode switching preserves edits, reanalysis explicitly replaces the form values,
 and leaving the page aborts pending analysis. Neither source text nor drafts are
 stored in browser persistent storage. This delivery covers text only.
+
+### Audio intake slice
+
+The transcription port accepts temporary audio bytes and MIME type and returns text;
+it has no database access. The audio orchestration service validates bounded input,
+invokes transcription and reuses `build_draft` without database mutations. FastAPI
+closes its spooled upload in a finally block on success and failure. No audio asset
+row, permanent file, queue, or object storage is created. Multipart parsing may spool
+the incoming upload before application size validation; the service reads at most
+its configured limit plus one byte. MIME validation is not codec validation in mock mode.
+Only the deterministic mock adapter is delivered. Unsupported provider configuration
+fails explicitly (503); it never silently switches providers.
+The React audio component releases microphone tracks on stop/error/unmount and aborts
+pending analysis on unmount. JSON and multipart requests share the API client;
+multipart Content-Type is left to the browser. All intake modes share one editable form.

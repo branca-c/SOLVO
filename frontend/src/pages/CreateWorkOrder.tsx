@@ -6,8 +6,10 @@ import { PageHeading } from '../components/PageHeading'
 import { ErrorMessage } from '../components/Feedback'
 import { Icon } from '../components/Icon'
 import { AITextIntake } from '../components/AITextIntake'
+import { AudioIntake } from '../components/AudioIntake'
 export function CreateWorkOrder({ onCreated }: { onCreated: (id: number) => void }) {
   const [mode, setMode] = useState<'manual' | 'ai'>('manual')
+  const [audioBusy, setAudioBusy] = useState(false)
   const [sourceText, setSourceText] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [analysisError, setAnalysisError] = useState('')
@@ -23,22 +25,25 @@ export function CreateWorkOrder({ onCreated }: { onCreated: (id: number) => void
       setValues(current => ({ ...current, [name]: event.target.value }))
     } }
   }
+  function applyDraft(result: WorkOrderDraft) {
+    setDraft(result)
+    setValues({
+      user_first_name: result.user_first_name ?? '', user_last_name: result.user_last_name ?? '',
+      user_phone: result.user_phone ?? '', user_email: result.user_email ?? '',
+      fault_address: result.fault_address ?? '', category_id: result.category_id?.toString() ?? '',
+      priority: result.priority ?? '', description: result.description,
+    })
+  }
   async function analyze(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (analyzing || busy || !sourceText.trim()) return
+    if (analyzing || busy || audioBusy || !sourceText.trim()) return
     const controller = new AbortController()
     analysis.current = controller
     setAnalyzing(true); setAnalysisError(''); setError('')
     try {
       const result = await api.draft(sourceText, controller.signal)
       if (controller.signal.aborted) return
-      setDraft(result)
-      setValues({
-        user_first_name: result.user_first_name ?? '', user_last_name: result.user_last_name ?? '',
-        user_phone: result.user_phone ?? '', user_email: result.user_email ?? '',
-        fault_address: result.fault_address ?? '', category_id: result.category_id?.toString() ?? '',
-        priority: result.priority ?? '', description: result.description,
-      })
+      applyDraft(result)
     } catch (e) { if (!controller.signal.aborted) setAnalysisError(messageFor(e)) }
     finally { if (!controller.signal.aborted) setAnalyzing(false) }
   }
@@ -46,7 +51,7 @@ export function CreateWorkOrder({ onCreated }: { onCreated: (id: number) => void
   const [error, setError] = useState('')
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (busy || analyzing || (mode === 'ai' && !draft)) return
+    if (busy || analyzing || audioBusy || (mode === 'ai' && !draft)) return
     const form = new FormData(event.currentTarget)
     const text = (name: string) => String(form.get(name) ?? '').trim()
     setError('')
@@ -71,12 +76,13 @@ export function CreateWorkOrder({ onCreated }: { onCreated: (id: number) => void
     <PageHeading title="Nuovo ordine di lavoro" description="Inserisci i dati del richiedente e descrivi l’intervento necessario." create={false} />
     <div className="intake-modes" role="group" aria-label="Modalità di inserimento">
       <button className={mode === 'manual' ? 'mode-button selected' : 'mode-button'} type="button"
-        aria-pressed={mode === 'manual'} disabled={busy || analyzing} onClick={() => setMode('manual')}>Inserimento manuale</button>
+        aria-pressed={mode === 'manual'} disabled={busy || analyzing || audioBusy} onClick={() => setMode('manual')}>Inserimento manuale</button>
       <button className={mode === 'ai' ? 'mode-button selected' : 'mode-button'} type="button"
-        aria-pressed={mode === 'ai'} disabled={busy || analyzing} onClick={() => setMode('ai')}><span aria-hidden="true">✦</span> Assistito da AI</button>
+        aria-pressed={mode === 'ai'} disabled={busy || analyzing || audioBusy} onClick={() => setMode('ai')}><span aria-hidden="true">✦</span> Assistito da AI</button>
     </div>
     {mode === 'ai' && <>
-      <AITextIntake text={sourceText} onTextChange={setSourceText} onAnalyze={analyze} busy={analyzing || busy} error={analysisError} />
+      <AITextIntake text={sourceText} onTextChange={setSourceText} onAnalyze={analyze} busy={analyzing || busy || audioBusy} error={analysisError} />
+      <AudioIntake disabled={analyzing || busy} onDraft={applyDraft} onBusy={setAudioBusy} />
       {draft && <div className="notice ai-review" role="status"><div>
         <strong>Bozza pronta: rivedi e conferma i dati.</strong>
         <p>Puoi modificare tutti i campi. Una nuova analisi sostituirà i valori del form.</p>
@@ -87,19 +93,19 @@ export function CreateWorkOrder({ onCreated }: { onCreated: (id: number) => void
     {(mode === 'manual' || draft) && <form className="surface create-form" onSubmit={submit} aria-busy={busy}>
       <div className="section-heading"><div><h2>Dettagli della richiesta</h2><p>I campi contrassegnati con * sono obbligatori.</p></div><span className="form-step">Nuovo ODL</span></div>
       {error && <ErrorMessage message={error} />}
-      <fieldset disabled={busy || analyzing}><legend>Richiedente</legend><div className="form-grid">
+      <fieldset disabled={busy || analyzing || audioBusy}><legend>Richiedente</legend><div className="form-grid">
         <label>Nome *<input {...field('user_first_name')} required maxLength={100} autoComplete="given-name" /></label>
         <label>Cognome *<input {...field('user_last_name')} required maxLength={100} autoComplete="family-name" /></label>
         <label>Telefono *<input {...field('user_phone')} type="tel" required maxLength={32} autoComplete="tel" /></label>
         <label>Email <span className="optional">(facoltativa)</span><input {...field('user_email')} type="email" maxLength={255} autoComplete="email" /></label>
       </div></fieldset>
-      <fieldset disabled={busy || analyzing}><legend>Intervento</legend><div className="form-grid">
+      <fieldset disabled={busy || analyzing || audioBusy}><legend>Intervento</legend><div className="form-grid">
         <label className="full-width">Indirizzo del guasto *<input {...field('fault_address')} required maxLength={500} autoComplete="street-address" placeholder="Via, numero civico, edificio o locale" /></label>
         <div className="field"><label htmlFor="category-id">ID categoria *</label><input id="category-id" {...field('category_id')} type="number" required min="1" step="1" aria-describedby="category-help" /><small id="category-help">Inserisci l’ID di una categoria già configurata.</small></div>
         <label><span id="create-priority-label">Priorità *</span><select aria-labelledby="create-priority-label" {...field('priority')} required><option value="" disabled>Seleziona una priorità</option>{priorities.map(p => <option key={p}>{p}</option>)}</select></label>
         <label className="full-width">Descrizione del guasto *<textarea {...field('description')} required rows={5} placeholder="Descrivi il problema e indica i dettagli utili all’intervento." /></label>
       </div></fieldset>
-      <div className="form-footer"><p>L’ODL sarà creato con stato <strong>APERTO</strong>.</p><div className="heading-actions"><button type="button" className="button button-secondary" disabled={busy || analyzing} onClick={() => navigate('/odl')}>Annulla</button><button className="button button-primary" disabled={busy || analyzing} type="submit"><Icon name="plus" />{busy ? 'Creazione…' : mode === 'ai' ? 'Conferma e crea ODL' : 'Crea ODL'}</button></div></div>
+      <div className="form-footer"><p>L’ODL sarà creato con stato <strong>APERTO</strong>.</p><div className="heading-actions"><button type="button" className="button button-secondary" disabled={busy || analyzing || audioBusy} onClick={() => navigate('/odl')}>Annulla</button><button className="button button-primary" disabled={busy || analyzing || audioBusy} type="submit"><Icon name="plus" />{busy ? 'Creazione…' : mode === 'ai' ? 'Conferma e crea ODL' : 'Crea ODL'}</button></div></div>
     </form>}
   </>
 }

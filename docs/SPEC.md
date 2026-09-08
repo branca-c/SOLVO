@@ -61,7 +61,7 @@ Reminders are separate timestamped events. The existing `reminders_count` column
 ## 5. Main flow
 
 1. The requester submits a text message or records audio in the browser.
-2. Audio is stored and transcribed through an audio/transcription provider. During local development, this provider is a fake or stub.
+2. Audio is held temporarily for transcription through a provider and is never stored permanently in this slice. Local transcription is a deterministic mock.
 3. An AI provider returns structured proposed data: requester details, address, category, priority, description, and people-risk flag.
 4. The backend validates required fields, allowed values, and category existence.
 5. The requester sees an editable draft. No ODL exists until they explicitly confirm it.
@@ -244,4 +244,17 @@ Contacts and address are never filled with invented values.
 The frontend shows analysis loading/errors, preserves the source text on failure,
 populates the existing form on success, and allows editing every creation field.
 Only the final confirmation sends the normal POST and navigates to the new ODL.
-No automatic creation, audio, or external transport is included.
+Text and audio drafts require confirmation; automatic creation and external transport are not included.
+
+### Delivered audio intake
+
+`POST /api/ai/work-order-draft-audio` accepts multipart field `audio` and returns
+`{transcript, draft}` using the same extraction and category resolution as text intake.
+Supported MIME types: audio/webm (including codec parameters), audio/wav,
+audio/x-wav, audio/mpeg and audio/mp4. Missing/empty audio and empty or over-10000-character
+transcripts return 422; unsupported MIME returns 415; oversized audio returns 413.
+The default file limit is 10 MiB. Provider failures return 503.
+The mock does not decode or recognize speech: it returns a configured demonstration
+text and labels the resulting draft with a simulation warning. Uploaded audio is temporary.
+The operator can upload or record, inspect the transcript, edit the existing form,
+and explicitly confirm creation through the normal WorkOrder endpoint.

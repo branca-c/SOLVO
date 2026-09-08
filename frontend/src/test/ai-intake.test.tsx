@@ -98,3 +98,57 @@ it('aborts analysis when leaving the creation page', async () => {
   unmount()
   expect(signal?.aborted).toBe(true)
 })
+
+it('uploads audio, shows transcript and requires editable confirmation', async () => {
+  const audio = vi.spyOn(api, 'audioDraft').mockResolvedValue({ transcript: 'Perdita dal tubo.', draft })
+  const create = vi.spyOn(api, 'create').mockResolvedValue(order)
+  render(<CreateWorkOrder onCreated={vi.fn()} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Assistito da AI' }))
+  const file = new File(['audio'], 'guasto.webm', { type: 'audio/webm' })
+  await userEvent.upload(screen.getByLabelText('File audio'), file)
+  await userEvent.click(screen.getByRole('button', { name: 'Trascrivi e analizza' }))
+  await screen.findByText('Perdita dal tubo.')
+  expect(audio).toHaveBeenCalledWith(file, expect.any(AbortSignal))
+  expect(create).not.toHaveBeenCalled()
+  expect((screen.getByLabelText('Nome *') as HTMLInputElement).value).toBe('Ada')
+  await userEvent.clear(screen.getByLabelText('Nome *'))
+  await userEvent.type(screen.getByLabelText('Nome *'), 'Maria')
+  await userEvent.click(screen.getByRole('button', { name: 'Conferma e crea ODL' }))
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ user_first_name: 'Maria' }))
+})
+
+it('keeps file upload usable when microphone permission is denied', async () => {
+  vi.stubGlobal('MediaRecorder', class { static isTypeSupported() { return true } })
+  Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn().mockRejectedValue(new Error('denied')) } })
+  render(<CreateWorkOrder onCreated={vi.fn()} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Assistito da AI' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Registra audio' }))
+  await screen.findByText('Microfono non disponibile o permesso negato. Puoi caricare un file audio.')
+  expect((screen.getByLabelText('File audio') as HTMLInputElement).disabled).toBe(false)
+  vi.unstubAllGlobals()
+})
+
+it('records, stops microphone tracks and uploads the resulting file', async () => {
+  const stop = vi.fn()
+  Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] }) } })
+  class Recorder {
+    static isTypeSupported() { return true }
+    state = 'inactive'
+    ondataavailable?: (event: { data: Blob }) => void
+    onstop?: () => void
+    start() { this.state = 'recording' }
+    stop() { this.state = 'inactive'; this.ondataavailable?.({ data: new Blob(['audio']) }); this.onstop?.() }
+  }
+  vi.stubGlobal('MediaRecorder', Recorder)
+  const audio = vi.spyOn(api, 'audioDraft').mockResolvedValue({ transcript: 'Audio registrato', draft })
+  render(<CreateWorkOrder onCreated={vi.fn()} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Assistito da AI' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Registra audio' }))
+  await screen.findByText('Registrazione in corso…')
+  await userEvent.click(screen.getByRole('button', { name: 'Ferma registrazione' }))
+  expect(stop).toHaveBeenCalled()
+  await userEvent.click(screen.getByRole('button', { name: 'Trascrivi e analizza' }))
+  await screen.findByText('Audio registrato')
+  expect(audio.mock.calls[0][0].type).toBe('audio/webm')
+  vi.unstubAllGlobals()
+})

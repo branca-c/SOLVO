@@ -33,3 +33,8 @@ class ExtractedWorkOrder(BaseModel):
 class WorkOrderDraft(ExtractedWorkOrder):
     category_id: int | None = None
     description: str = Field(min_length=1, max_length=10000)
+
+
+class AudioWorkOrderDraft(BaseModel):
+    transcript: str
+    draft: WorkOrderDraft

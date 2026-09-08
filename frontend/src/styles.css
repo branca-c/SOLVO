@@ -250,3 +250,5 @@ dd { margin: 0; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
   .ai-intake-actions { align-items: stretch; flex-direction: column; }
   .mode-button { padding: 10px 12px; }
 }
+
+.audio-transcript { white-space: pre-wrap; overflow-wrap: anywhere; }

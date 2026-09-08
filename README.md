@@ -260,3 +260,21 @@ descrizione del mock conserva il testo originale. Non vengono inferiti stati ODL
 Errori: input invalido 422, output del provider non conforme 502, provider non
 disponibile 503. Il frontend conserva il testo e permette di riprovare o passare
 al manuale; non ritenta automaticamente né crea ODL in caso di errore.
+
+### Audio-assisted intake (local mock)
+
+Install updated backend dependencies with `backend/.venv/bin/python -m pip install -r backend/requirements.txt`.
+Set `TRANSCRIPTION_PROVIDER=mock` (legacy `fake` also accepted),
+`TRANSCRIPTION_MOCK_TEXT="Perdita di acqua dal tubo del bagno."` and
+`MAX_AUDIO_UPLOAD_MB=10` in `.env`. The configurable server limit is 1–25 MiB;
+the browser conservatively allows at most 10 MiB. No AWS credentials are required.
+Every accepted file returns the configured demonstration text, **not recognized speech**.
+The transcript feeds the existing AI draft pipeline (`AI_PROVIDER=mock` locally).
+
+Under **Nuovo ODL → Assistito da AI**, upload WebM/WAV/MP3/MP4 or choose
+**Registra audio → Ferma registrazione → Trascrivi e analizza**. Recording requires
+microphone permission and a browser secure context (HTTPS or localhost); upload
+remains available if recording is unsupported or denied. Review the transcript and
+edit the shared form, then select **Conferma e crea ODL**. Audio analysis never creates
+an ODL. Audio is temporary only; no files or audio records are retained by this slice.
+Amazon Transcribe remains the future production provider described in the roadmap.

@@ -1,4 +1,4 @@
-import type { Assignment, HistoryEntry, Reminder, WorkOrder, WorkOrderInput, WorkOrderStatus, Priority, WorkOrderDraft } from '../types/workOrder'
+import type { Assignment, HistoryEntry, Reminder, WorkOrder, WorkOrderInput, WorkOrderStatus, Priority, WorkOrderDraft, AudioWorkOrderDraft } from '../types/workOrder'
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) { super(message) }
@@ -27,7 +27,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     // Same-origin requests: Vite forwards /api to VITE_API_BASE_URL locally.
     response = await fetch(`/api${path}`, {
       ...options,
-      headers: { Accept: 'application/json', ...(options.body ? { 'Content-Type': 'application/json' } : {}) },
+      headers: { Accept: 'application/json', ...(options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}) },
     })
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error
@@ -45,6 +45,11 @@ export function messageFor(error: unknown): string {
   return error instanceof Error ? error.message : 'Si è verificato un errore. Riprova.'
 }
 export const api = {
+  audioDraft: (audio: File, signal?: AbortSignal) => {
+    const body = new FormData()
+    body.append('audio', audio)
+    return request<AudioWorkOrderDraft>('/ai/work-order-draft-audio', { method: 'POST', body, signal })
+  },
   draft: (text: string, signal?: AbortSignal) => request<WorkOrderDraft>('/ai/work-order-draft', {
     method: 'POST', body: JSON.stringify({ text }), signal,
   }),
