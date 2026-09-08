@@ -170,3 +170,53 @@ ODL's history; history is otherwise append-only. Models and migrations are
 unchanged. Authentication and authorization are not delivered in this slice.
 SQLite API tests cover persistence, rollback on history failure, and stale ORM
 objects; PostgreSQL-specific row-lock concurrency is not exercised by that suite.
+
+
+## 11. Delivered assignment routing slice
+
+Assignment endpoints are registered through the existing API router. Thin routes
+map service resource errors to 404 and routing conflicts to 409; Pydantic handles
+422 and response serialization with a technician summary. A dedicated service in
+`app/services/assignments.py` orchestrates the existing SQLAlchemy models. The
+selection policy in `app/domain/assignment_routing.py` operates on technician
+attributes without HTTP or database operations. Models and migrations are unchanged.
+
+All assignment mutations lock the parent WorkOrder row (`SELECT FOR UPDATE` on
+PostgreSQL) before reading current attempts, deciding eligibility, or allocating
+an attempt number. Assignment records are refreshed after acquiring that lock,
+so stale sessions cannot accept/reject an already completed attempt. This shares
+the parent-row lock with the existing status-change service. The service commits
+once and explicitly rolls back errors. The existing unique constraint on
+`(work_order_id, attempt_number)` remains a database backstop; one PENDING attempt
+and no repeated technician are enforced through the serialized service flow.
+Direct database writes must not bypass these application invariants.
+
+Normal technicians precede team leaders, each group ordered by escalation_order
+and ID. Selection uses the ODL's current database category and never hardcodes a
+team size. Next-candidate selection moves forward from the current technician
+and excludes all previously attempted IDs. If the current technician no longer
+belongs to the category, sequential routing conflicts rather than silently
+restarting the chain. Direct escalation selects the first untried team leader.
+Multiple configured leaders are deterministic; no eligible leader returns 409.
+
+Start creates attempt 1 only when there are no attempts; any later start returns
+409. Reject/no-response validate the next candidate before changing the prior
+attempt. Exhaustion returns 409 with the entire prior state unchanged, including
+PENDING and history. Success returns the completed previous assignment, and
+`current` exposes the new PENDING attempt. Escalation marks the active PENDING
+attempt ESCALATED, if present, and creates a new leader attempt numbered
+`max(attempt_number) + 1` (or 1 with no history). Accepted attempts are historical
+and are not modified by escalation. A technician is never attempted twice.
+
+All mutations reject terminal ODLs; queries remain available. Acceptance sets
+IN_CORSO using the existing status policy and writes status history only for a
+real change. The accepted Assignment represents the assigned technician; no new
+WorkOrder column is needed. Start, accept, reject, no-response, and escalation
+append history in their mutation transaction. Database defaults set sent_at;
+server UTC time sets responded_at for accept/reject. NO_RESPONSE and ESCALATED
+leave responded_at null. No sent_at/history event represents a delivered message.
+
+API tests cover routing, duplicate/stale actions, terminal restrictions, history,
+and rollback after a simulated history failure. They use SQLite; PostgreSQL's
+concurrent row-lock behavior is not exercised by this suite. This slice adds no
+transport, authentication, scheduler, availability, zone, or SLA logic.

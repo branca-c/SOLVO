@@ -2,7 +2,7 @@
 
 SOLVO is an AI-assisted work-order and facility service desk. A requester describes a fault by text or audio, reviews an editable structured ODL (Ordine di Lavoro) draft, and confirms it. Deterministic backend rules route the confirmed ODL to technicians, while operators monitor progress in a real-time Control Center.
 
-The backend contains a FastAPI health endpoint, SQLAlchemy models/migrations, and the WorkOrder CRUD, reminders, history, and status-policy API slice of Step 3. The complete Step 3 workflow is not delivered.
+The backend contains a FastAPI health endpoint, SQLAlchemy models/migrations, and the WorkOrder CRUD, reminders, history, status-policy, and assignment-routing API slice of Step 3. The complete Step 3 workflow is not delivered.
 
 ## Source of truth
 
@@ -21,7 +21,7 @@ When documents conflict, the PDF governs functional/technical intent and the PNG
 - Roles: requester, operator, technician.
 - Priorities: `PROGRAMMABILE`, `BASSA`, `MEDIA`, `ALTA`, `URGENTE`.
 - Statuses: `APERTO`, `IN_CORSO`, `EVASO`, `CHIUSO`, `ANNULLATO`.
-- Technician routing: three technicians followed by the team lead.
+- Technician routing: configured category technicians by escalation order, with team leaders last.
 - Technician refusal: optional notes only.
 - Intended stack: React + TypeScript, FastAPI + Pydantic, PostgreSQL, REST + WebSocket.
 - Local deterministic providers come first; external/AWS integrations are deferred.
@@ -97,3 +97,58 @@ and new status in the same transaction. History also includes `CREATED` and
 `REMINDER_CREATED`; generic no-op patches do not add events.
 
 See `docs/ARCHITECTURE.md` section 10 for the delivered scope and decisions.
+
+
+## Technician assignment API
+
+Technicians must be configured in the database for each category. Routing uses
+all configured technicians: normal technicians by `escalation_order`, then team
+leaders by `escalation_order` (ID breaks ties). No fixed technician count is used.
+Sequential routing advances after the current technician and excludes every
+technician already attempted for the ODL, including during direct escalation.
+A category/configuration change that removes the current technician from the
+category makes sequential routing return 409.
+
+| Method | Path | Result |
+|---|---|---|
+| POST | `/api/work-orders/{id}/assignments/start` | Start attempt 1, 201 |
+| GET | `/api/work-orders/{id}/assignments/current` | Active PENDING, otherwise latest attempt, 200 |
+| GET | `/api/work-orders/{id}/assignments` | Attempts in ascending attempt-number order, 200 |
+| POST | `/api/assignments/{id}/accept` | Accept and move ODL to IN_CORSO, 200 |
+| POST | `/api/assignments/{id}/reject` | Reject and create next PENDING attempt atomically, 200 |
+| POST | `/api/assignments/{id}/no-response` | Mark NO_RESPONSE and create next PENDING atomically, 200 |
+| POST | `/api/work-orders/{id}/assignments/escalate-team-leader` | Replace current PENDING with an untried leader attempt, 201 |
+
+Responses include the assignment fields and a nested technician summary. Reject
+and no-response return the updated previous attempt; use `current` to fetch its
+successor. Reject accepts an omitted body, `{}`, or optional
+`{"rejection_notes": "..."}`. It never requires a reason. Unknown payload fields
+or malformed input return 422. Missing ODL/assignment returns 404; `current` also
+returns 404 when no attempts exist, while the list returns `[]`.
+
+`start` is only for an ODL with no assignment history. Repeated starts return 409,
+including after acceptance; attempts are never reset to 1. Only the current
+PENDING attempt can accept/reject/no-response; duplicate or stale actions return
+409 without extra history. CHIUSO and ANNULLATO block all assignment mutations;
+reads remain available. APERTO, IN_CORSO and EVASO allow assignment commands;
+acceptance sets IN_CORSO, recording status history only if the status changes.
+The accepted assignment itself links the technician to the ODL; no new field is
+added to WorkOrder.
+
+Every mutation commits assignments, ODL changes, and history together. When no
+next technician is configured, reject/no-response return 409 and preserve the
+previous PENDING assignment, notes, timestamps, and history. The operator may
+correct configuration and retry. Direct escalation uses only untried team leaders
+and may start at attempt 1 without an existing assignment. If none qualifies it
+returns 409 without changing the current attempt; it never repeats a technician
+or routes back to skipped normal technicians after the leader. Attempt numbers
+increase by one. Existing ACCEPTED attempts remain historical during direct
+escalation.
+
+`sent_at` uses the database timestamp default and does not imply message delivery.
+Accept/reject set `responded_at` on the server. NO_RESPONSE and ESCALATED keep it
+null because no technician responded. The no-response action is manual.
+History events are `ASSIGNMENT_STARTED`, `ASSIGNMENT_ACCEPTED`,
+`ASSIGNMENT_REJECTED`, `ASSIGNMENT_NO_RESPONSE`, `ASSIGNMENT_ESCALATED`, and
+`STATUS_CHANGED` when acceptance changes the ODL status. Each event identifies
+the relevant attempt/technician; rejection notes are also retained.

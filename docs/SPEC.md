@@ -66,9 +66,9 @@ Reminders are separate timestamped events. The existing `reminders_count` column
 4. The backend validates required fields, allowed values, and category existence.
 5. The requester sees an editable draft. No ODL exists until they explicitly confirm it.
 6. On confirmation, the backend generates code/time, creates an `APERTO` ODL, and records its history event atomically.
-7. The routing service selects the configured team for the category: Technician 1, Technician 2, Technician 3, then team lead.
+7. The routing service selects configured category technicians by escalation order, with normal technicians first and team leaders last; there is no fixed team size.
 8. A notification provider sends the current candidate a link to the technician mobile page. During local development, delivery is fake and inspectable.
-9. The technician accepts or refuses. Refusal has only one optional `notes` field; it has no required reason.
+9. The technician accepts or refuses. Refusal has only one optional `rejection_notes` field; it has no required reason.
 10. Acceptance assigns the technician and moves the ODL to `IN_CORSO`. Refusal or no response advances routing to the next candidate.
 11. Backend changes are broadcast to the Control Center through WebSocket without a page refresh.
 12. The assigned technician records the work performed and moves the ODL to `EVASO`.
@@ -90,7 +90,7 @@ The backend is authoritative for transitions, routing, retry, escalation, remind
 
 Terminal statuses are `CHIUSO` and `ANNULLATO`. Invalid transitions return 409 Conflict. Same-status requests return 200 without changing the ODL or duplicating history, including in terminal states.
 
-Routing order is configured per category. A refusal closes the current assignment attempt and starts the next one. A no-response retry follows the same deterministic sequence. If the sequence is exhausted, the ODL remains visibly unassigned/escalated for operator action; it is not silently accepted or closed.
+Routing order is configured per category. A refusal closes the current assignment attempt and starts the next one. A no-response retry follows the same deterministic sequence. If no next technician is configured, the action returns 409 without modifying the previous PENDING attempt or history; configuration can be corrected before retrying. No attempt is silently accepted or closed.
 
 For `URGENTE` plus people risk, the Control Center must strongly highlight the ODL and expose a direct call action for the team lead, bypassing the normal chain for human contact. SOLVO must clearly state that it does not replace emergency services (112/118 or law enforcement).
 
@@ -151,8 +151,8 @@ The scoped WorkOrder API uses existing persistence models and the contract in
 `README.md`. The status endpoint enforces exactly these transitions:
 APERTO → IN_CORSO/ANNULLATO, IN_CORSO → EVASO/ANNULLATO,
 EVASO → CHIUSO/IN_CORSO; CHIUSO and ANNULLATO are terminal. Same-status
-requests are no-op successes. Actor, assignment, and fulfillment-detail checks
-from the full product flow are not part of this delivery.
+requests are no-op successes. Assignment actions validate the current PENDING
+attempt; actor and fulfillment-detail checks are not part of this delivery.
 
 The reminder POST requires `created_by` to reference an existing user because the
 model does not allow null; no authentication is introduced. Reminder creation,
@@ -165,3 +165,35 @@ not. Missing ODLs return 404, invalid transitions 409, and invalid input 422.
 Category validation checks existence because the model has no active flag.
 Physical ODL deletion removes related history through existing cascades. This
 slice does not implement the complete product flow described above.
+
+
+## 11. Current assignment routing delivery
+
+Routing follows the database technicians for the ODL category: normal technicians
+by escalation_order, followed by team leaders by escalation_order. Sequential
+attempts always move forward and never repeat a technician already attempted for
+that ODL. Direct escalation selects only an untried team leader; it does not
+require a particular priority. There is no availability or zone filtering.
+
+Start creates attempt 1 and rejects an already started chain with 409. Accept,
+reject, and manual no-response require the current PENDING assignment; repeated
+or stale actions return 409. Acceptance records ACCEPTED and moves the ODL to
+IN_CORSO, adding status history only when changed. Reject accepts only optional
+rejection_notes. Reject/no-response atomically complete the previous attempt and
+create the next PENDING attempt numbered previous + 1. If no successor exists,
+409 leaves the entire previous state intact. Direct escalation atomically marks
+an existing PENDING attempt ESCALATED and creates a new PENDING leader attempt;
+without previous attempts its number is 1. Already attempted leaders are excluded,
+and absence of a qualifying leader returns 409 with no state changes.
+
+CHIUSO and ANNULLATO block every assignment mutation. Other ODL statuses are
+eligible; accepting for EVASO reopens it to IN_CORSO under the existing policy.
+The current-assignment query returns PENDING if present, otherwise the latest
+attempt; no attempts gives 404. The list returns attempts oldest to newest by
+attempt number. Missing ODLs/assignments return 404 and invalid input returns 422.
+
+Assignment mutations and related history commit together. sent_at is server-side;
+accept/reject set responded_at, while NO_RESPONSE and ESCALATED leave it null.
+History records start, accept, reject, no-response, escalation, and actual ODL
+status changes. The accepted Assignment provides the technician link without
+modifying WorkOrder. No message transport or automatic timeout is delivered.
