@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     app_debug: bool = False
     app_log_level: str = "INFO"
     database_url: PostgresDsn
+    ai_provider: str = "mock"
 
     model_config = SettingsConfigDict(
         env_file=(PROJECT_ROOT / ".env", ".env"),

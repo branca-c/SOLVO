@@ -67,3 +67,17 @@ export const assignmentLabels: Record<Assignment['status'], string> = {
   PENDING: 'In attesa', ACCEPTED: 'Accettata', REJECTED: 'Rifiutata',
   NO_RESPONSE: 'Nessuna risposta', ESCALATED: 'Escalation',
 }
+
+
+export interface WorkOrderDraft {
+  user_first_name: string | null
+  user_last_name: string | null
+  user_phone: string | null
+  user_email: string | null
+  fault_address: string | null
+  category_id: number | null
+  category_name: string | null
+  priority: Priority | null
+  description: string
+  warnings: string[]
+}

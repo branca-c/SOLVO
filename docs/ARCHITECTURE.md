@@ -257,3 +257,38 @@ reference composition. Small screens use stacked table rows, keyboard users can
 open each ODL by its link, forms have labels, and feedback uses live regions.
 Technicians/settings are disabled placeholders. Vitest and Testing Library cover
 key page flows and helpers; `tsc --noEmit` and `vite build` are quality gates.
+
+
+## 13. Delivered AI-assisted text draft slice
+
+`POST /api/ai/work-order-draft` accepts only text (trimmed, 1–10000 characters).
+The thin route obtains the SQLAlchemy dependency and selected provider, then
+calls `work_order_drafts.build_draft`. The provider protocol receives text only:
+it has no database session, repository, workflow commands, or creation method.
+Its return value is untrusted and validated against `ExtractedWorkOrder`, which
+forbids extra fields, workflow fields and provider-supplied database IDs. The
+response uses `WorkOrderDraft` with a required description fallback and warnings.
+Names, phone, email and address absent from the source are discarded even if a
+provider proposes them. Category names resolve by case/whitespace-normalized
+exact matching against configured Category rows; missing or ambiguous matches
+return null IDs and warnings. The service only SELECTs categories: there is no
+commit, persistence side effect, or WorkOrder creation dependency.
+
+`AI_PROVIDER=mock` selects deterministic keyword/explicit-field extraction;
+`fake` remains a compatibility alias for the previous environment example. Other
+values produce a recoverable 503. No AWS client, credentials, network inference,
+agent or tool-calling mechanism is introduced. The interface is the extension
+point for the Bedrock target recorded in Roadmap Step 8; it is not implemented.
+Invalid provider output returns 502 and provider failures return sanitized 503
+messages. Tests override the provider dependency to verify validation and failure
+handling, and inspect SQL to verify the absence of writes.
+
+The existing create page now has manual and assisted modes sharing one editable
+form and the original creation service. Analysis and creation are separate forms
+and separate requests. Missing draft values remain empty (including priority),
+so browser and backend creation validation still require completion. Warnings
+and proposed category name are shown beside the review form. Only explicit
+confirmation calls `POST /api/work-orders`; no new creation endpoint exists.
+Mode switching preserves edits, reanalysis explicitly replaces the form values,
+and leaving the page aborts pending analysis. Neither source text nor drafts are
+stored in browser persistent storage. This delivery covers text only.

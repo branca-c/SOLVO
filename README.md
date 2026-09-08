@@ -206,3 +206,57 @@ di deployment. I test Vitest verificano componenti, form, transizioni, conteggi,
 filtri e contratti del client usando risposte controllate; nessun dato fittizio
 è incluso nel runtime dell’applicazione. Poppins è distribuito localmente nel
 bundle; non vengono caricati font da servizi esterni.
+
+
+## Inserimento testo assistito da AI
+
+In **Nuovo ODL**, scegli **Assistito da AI**, incolla la descrizione e premi
+**Analizza con AI**. La risposta compila il normale form modificabile. Rivedi i
+dati, completa i campi vuoti, modifica categoria/priorità se necessario e premi
+**Conferma e crea ODL**. Solo quest'ultimo passaggio chiama `POST /api/work-orders`.
+L'inserimento manuale rimane disponibile e non chiama il servizio AI.
+
+`POST /api/ai/work-order-draft` accetta `{"text": "..."}` (1–10000 caratteri,
+esclusi testi vuoti o composti solo da spazi) e restituisce una bozza, con valori
+null quando un dato manca, descrizione e avvisi. Non crea o modifica ODL, history,
+assegnazioni o categorie e non conserva il testo nel database.
+
+Configurazione backend in `.env`:
+
+```dotenv
+AI_PROVIDER=mock
+```
+
+`mock` è il default: applica regole locali deterministiche, senza servizi esterni,
+credenziali AWS o dipendenze aggiuntive. Il vecchio valore `fake` è un alias.
+Altri provider, compreso `bedrock`, restituiscono attualmente 503; non viene
+attivato un servizio remoto né nascosto un errore tramite fallback automatico.
+Il provider Bedrock con un modello Claude di classe Haiku è descritto come lavoro
+futuro in `docs/ROADMAP.md`, non implementato in questa slice.
+
+Esempio utile per il mock:
+
+```text
+Mi chiamo Ada Rossi. Telefono: +39 333 1234567;
+Email: ada@example.com; Indirizzo: Via Roma 12, Milano;
+C'è una perdita dal tubo del bagno.
+```
+
+Sono supportati anche campi espliciti `Nome: ...; Cognome: ...`, un indirizzo
+stradale con numero civico e i principali termini di guasto indicati nella
+specifica. Il mock non è un modello linguistico e non interpreta ogni variante
+del linguaggio: nomi complessi possono richiedere i campi etichettati o la revisione
+manuale. Più categorie candidate restano da scegliere. La categoria proposta è
+risolta per nome contro le righe configurate, senza ID fissi; nomi assenti o
+ambigui producono ID null e un avviso. Priorità e dati sono validati con Pydantic.
+I contatti/nomi/indirizzi non rintracciabili nel testo vengono esclusi dalla bozza.
+
+La priorità è proposta conservativamente: pericolo esplicito/immediato → URGENTE,
+blocco grave → ALTA, guasto ordinario → MEDIA, piccolo inconveniente → BASSA,
+manutenzione programmata/non urgente → PROGRAMMABILE. Senza indizi rimane null;
+semplici negazioni come “non urgente” e “nessun pericolo” sono riconosciute. La
+descrizione del mock conserva il testo originale. Non vengono inferiti stati ODL.
+
+Errori: input invalido 422, output del provider non conforme 502, provider non
+disponibile 503. Il frontend conserva il testo e permette di riprovare o passare
+al manuale; non ritenta automaticamente né crea ODL in caso di errore.

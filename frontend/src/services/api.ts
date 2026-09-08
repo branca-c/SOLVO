@@ -1,4 +1,4 @@
-import type { Assignment, HistoryEntry, Reminder, WorkOrder, WorkOrderInput, WorkOrderStatus, Priority } from '../types/workOrder'
+import type { Assignment, HistoryEntry, Reminder, WorkOrder, WorkOrderInput, WorkOrderStatus, Priority, WorkOrderDraft } from '../types/workOrder'
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) { super(message) }
@@ -6,7 +6,7 @@ export class ApiError extends Error {
 const fieldLabels: Record<string, string> = {
   user_first_name: 'Nome', user_last_name: 'Cognome', user_phone: 'Telefono',
   user_email: 'Email', fault_address: 'Indirizzo', category_id: 'Categoria',
-  priority: 'Priorità', description: 'Descrizione', status: 'Stato',
+  priority: 'Priorità', description: 'Descrizione', status: 'Stato', text: 'Descrizione libera',
 }
 export function errorDetail(body: unknown): string | undefined {
   if (!body || typeof body !== 'object' || !('detail' in body)) return
@@ -45,6 +45,9 @@ export function messageFor(error: unknown): string {
   return error instanceof Error ? error.message : 'Si è verificato un errore. Riprova.'
 }
 export const api = {
+  draft: (text: string, signal?: AbortSignal) => request<WorkOrderDraft>('/ai/work-order-draft', {
+    method: 'POST', body: JSON.stringify({ text }), signal,
+  }),
   list: (filters: { status?: WorkOrderStatus | ''; priority?: Priority | '' } = {}, signal?: AbortSignal) => {
     const query = new URLSearchParams()
     if (filters.status) query.set('status', filters.status)

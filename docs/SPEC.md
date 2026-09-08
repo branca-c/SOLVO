@@ -214,3 +214,34 @@ The frontend does not expose technician assignment actions or reminder creation.
 Loading, empty, recoverable error and success states are included. Dashboard and
 ODL navigation are functional; Tecnici and Impostazioni are disabled placeholders.
 Data is fetched on entry, refresh and successful mutations, without live updates.
+
+
+## 13. Current AI-assisted text intake delivery
+
+An operator can choose manual creation or paste text into the assisted mode of
+Nuovo ODL. Analysis returns only an editable draft; confirmation/edit is mandatory
+before the existing WorkOrder creation endpoint is called. No ODL, assignment,
+history event, or category is created or modified by draft analysis.
+
+The draft has optional requester first/last name, phone, email, fault address,
+category ID/name and priority; description is required, with the source text as
+fallback. Missing values stay null, and missing/ambiguous categories or incomplete
+required fields produce review warnings. Categories must resolve to configured
+database rows, with no hardcoded IDs. Priorities use only the existing five enum
+values. No status or workflow action is inferred.
+
+Local extraction is deterministic: ascensore → Ascensore; perdita/acqua/tubo →
+Idraulico; rete/internet/connessione → Rete; condizionatore/climatizzatore →
+Climatizzazione; riscaldamento/calorifero → Riscaldamento; vetro/finestra rotta →
+Vetri; corrente/elettrico → Elettrico. Multiple matches require manual category
+selection. Explicit category names are accepted only after database resolution.
+Explicit danger/immediate risk suggests URGENTE, serious blocking failure ALTA,
+normal fault MEDIA, minor inconvenience BASSA, planned/non-urgent maintenance
+PROGRAMMABILE. Without sufficient clues priority stays null. The local rules
+handle simple negations and require review for language they cannot interpret.
+Contacts and address are never filled with invented values.
+
+The frontend shows analysis loading/errors, preserves the source text on failure,
+populates the existing form on success, and allows editing every creation field.
+Only the final confirmation sends the normal POST and navigates to the new ODL.
+No automatic creation, audio, or external transport is included.
