@@ -56,7 +56,7 @@ Categories must be stored in the database and remain extensible without applicat
 | Assigned technician | No | Empty at creation; set through routing/acceptance |
 | Origin | Yes | `TESTO` or `AUDIO` |
 
-Reminders are separate timestamped events. Their displayed count is derived from those events, not stored as an independently editable counter.
+Reminders are separate timestamped events. The existing `reminders_count` column is maintained atomically when a reminder is created and cannot be edited directly through the API.
 
 ## 5. Main flow
 
@@ -84,10 +84,11 @@ The backend is authoritative for transitions, routing, retry, escalation, remind
 | `APERTO` | `IN_CORSO` | Technician acceptance | Candidate is the current valid assignee |
 | `IN_CORSO` | `EVASO` | Assigned technician | Work-performed details supplied |
 | `EVASO` | `CHIUSO` | Operator | Operator confirms closure |
+| `EVASO` | `IN_CORSO` | Explicit status request | Reopen fulfilled work |
 | `APERTO` | `ANNULLATO` | Authorized user/operator | Cancellation is recorded |
 | `IN_CORSO` | `ANNULLATO` | Operator | Cancellation is recorded |
 
-Terminal statuses are `CHIUSO` and `ANNULLATO`. Invalid and repeated transitions return a stable conflict result and must not duplicate history or assignment effects.
+Terminal statuses are `CHIUSO` and `ANNULLATO`. Invalid transitions return 409 Conflict. Same-status requests return 200 without changing the ODL or duplicating history, including in terminal states.
 
 Routing order is configured per category. A refusal closes the current assignment attempt and starts the next one. A no-response retry follows the same deterministic sequence. If the sequence is exhausted, the ODL remains visibly unassigned/escalated for operator action; it is not silently accepted or closed.
 
@@ -144,13 +145,23 @@ The MVP is acceptable when a repeatable 2–3 minute demo can:
 8. run without AWS by using local provider implementations.
 
 
-## 10. Current WorkOrder CRUD delivery
+## 10. Current WorkOrder API delivery
 
-The explicitly scoped WorkOrder API implementation uses the existing persistence
-models and the contract documented in `README.md`. For this delivery, status is
-set through a dedicated enum-only endpoint without the workflow restrictions in
-section 6. The existing `reminders_count` column starts at zero and is not API
-editable. Category validation checks existence because the existing model has no
-active flag. Creation and status changes record history atomically; physical ODL
-deletion removes related history through existing cascades. This slice does not
-implement the complete product flow described above.
+The scoped WorkOrder API uses existing persistence models and the contract in
+`README.md`. The status endpoint enforces exactly these transitions:
+APERTO → IN_CORSO/ANNULLATO, IN_CORSO → EVASO/ANNULLATO,
+EVASO → CHIUSO/IN_CORSO; CHIUSO and ANNULLATO are terminal. Same-status
+requests are no-op successes. Actor, assignment, and fulfillment-detail checks
+from the full product flow are not part of this delivery.
+
+The reminder POST requires `created_by` to reference an existing user because the
+model does not allow null; no authentication is introduced. Reminder creation,
+SQL counter increment, and history insertion are atomic. Each successful POST
+creates a distinct reminder, regardless of ODL status. Reminder and history GETs
+return only that ODL's records, newest first with descending ID as a tie-breaker.
+Creation, actual status changes, and reminders append history; no-op updates do
+not. Missing ODLs return 404, invalid transitions 409, and invalid input 422.
+
+Category validation checks existence because the model has no active flag.
+Physical ODL deletion removes related history through existing cascades. This
+slice does not implement the complete product flow described above.

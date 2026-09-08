@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models import Priority, WorkOrder, WorkOrderStatus
+from app.models import Priority, Reminder, WorkOrder, WorkOrderHistory, WorkOrderStatus
+from app.schemas.reminder import ReminderCreate, ReminderResponse
+from app.schemas.work_order_history import WorkOrderHistoryResponse
 from app.schemas.work_order import (
     WorkOrderCreate,
     WorkOrderResponse,
@@ -64,10 +66,37 @@ def update_work_order(
 def change_work_order_status(
     data: WorkOrderStatusUpdate, work_order: ExistingWorkOrder, db: Database
 ) -> WorkOrder:
-    return work_orders.change_status(db, work_order, data.status)
+    try:
+        return work_orders.change_status(db, work_order, data.status)
+    except work_orders.InvalidTransitionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.delete("/{work_order_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_work_order(work_order: ExistingWorkOrder, db: Database) -> Response:
     work_orders.delete(db, work_order)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{work_order_id}/reminders",
+    response_model=ReminderResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_reminder(
+    data: ReminderCreate, work_order: ExistingWorkOrder, db: Database
+) -> Reminder:
+    try:
+        return work_orders.create_reminder(db, work_order, data.created_by)
+    except work_orders.InvalidReminderCreatorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/{work_order_id}/reminders", response_model=list[ReminderResponse])
+def list_reminders(work_order: ExistingWorkOrder, db: Database) -> list[Reminder]:
+    return work_orders.list_reminders(db, work_order)
+
+
+@router.get("/{work_order_id}/history", response_model=list[WorkOrderHistoryResponse])
+def list_history(work_order: ExistingWorkOrder, db: Database) -> list[WorkOrderHistory]:
+    return work_orders.list_history(db, work_order)

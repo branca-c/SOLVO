@@ -137,13 +137,36 @@ Creation sets `APERTO` and `reminders_count = 0`; database defaults generate
 creation/update timestamps. Codes use `SOLVO-YYYYMMDD-XXXXXXXXXXXXXXXX`, with a
 UTC date and 16 uppercase random UUID hexadecimal characters, protected by the
 existing database unique constraint. Categories must exist; the current category
-model has no active flag. The existing stored reminder counter is read-only
-through this API.
+model has no active flag. The existing stored reminder counter cannot be set directly by API clients;
+reminder creation increments it atomically.
 
-The dedicated status endpoint accepts any declared status without transition or
-actor restrictions, as explicitly requested for this slice. Creation and actual
-status changes append history entries in the same transaction; repeated writes
-of the same status do not append duplicate entries. No history endpoint is added.
+The dedicated status endpoint uses the explicit transition map in
+`app/domain/work_order_status.py`: APERTO → IN_CORSO/ANNULLATO,
+IN_CORSO → EVASO/ANNULLATO, EVASO → CHIUSO/IN_CORSO; CHIUSO and ANNULLATO
+are terminal. Same-status requests succeed without mutations or new history.
+Invalid transitions return 409 and invalid enum inputs remain 422. The service
+refreshes and locks the ODL row with `FOR UPDATE` before validating the current
+status on PostgreSQL, so concurrent requests cannot use stale status values.
+Status updates and their history commit together; failures explicitly roll back.
+The policy has no HTTP or SQL operations and introduces no actor restrictions.
+
+POST `/api/work-orders/{id}/reminders` requires a `created_by` integer identifying
+an existing user, because the existing Reminder model has a non-null foreign key.
+This is caller-supplied attribution only; no authentication is introduced.
+Unknown users return 422. The service increments the counter using
+`reminders_count = reminders_count + 1` in SQL, inserts the Reminder using the
+server timestamp default, and appends `REMINDER_CREATED` history in one
+transaction. Any database failure rolls back the counter, reminder, and history.
+Each successful POST creates a new reminder; there is no status restriction.
+
+GET `/api/work-orders/{id}/reminders` and `/history` return their respective
+records ordered by creation timestamp descending, then ID descending for ties.
+All three endpoints use the existing ODL dependency to return 404 for missing
+ODLs. History includes creation, actual status changes (old and new values), and
+reminders. Generic no-op updates do not append history.
+
 Deletion is physical and uses existing ORM cascades, including deletion of the
 ODL's history; history is otherwise append-only. Models and migrations are
 unchanged. Authentication and authorization are not delivered in this slice.
+SQLite API tests cover persistence, rollback on history failure, and stale ORM
+objects; PostgreSQL-specific row-lock concurrency is not exercised by that suite.

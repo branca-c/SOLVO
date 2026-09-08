@@ -2,7 +2,7 @@
 
 SOLVO is an AI-assisted work-order and facility service desk. A requester describes a fault by text or audio, reviews an editable structured ODL (Ordine di Lavoro) draft, and confirms it. Deterministic backend rules route the confirmed ODL to technicians, while operators monitor progress in a real-time Control Center.
 
-The backend contains a FastAPI health endpoint, SQLAlchemy models/migrations, and the WorkOrder CRUD API slice of Step 3. The complete Step 3 workflow is not delivered.
+The backend contains a FastAPI health endpoint, SQLAlchemy models/migrations, and the WorkOrder CRUD, reminders, history, and status-policy API slice of Step 3. The complete Step 3 workflow is not delivered.
 
 ## Source of truth
 
@@ -53,7 +53,10 @@ currently configured in the backend.
 | GET | `/api/work-orders` | List newest first, 200; optional `status`, `priority`, `category_id` filters combine with AND |
 | GET | `/api/work-orders/{id}` | Read ODL, 200 |
 | PATCH | `/api/work-orders/{id}` | Update supplied editable fields, 200 |
-| PATCH | `/api/work-orders/{id}/status` | Set any valid ODL status, 200 |
+| PATCH | `/api/work-orders/{id}/status` | Apply an allowed status transition, 200 |
+| POST | `/api/work-orders/{id}/reminders` | Create a reminder, 201 |
+| GET | `/api/work-orders/{id}/reminders` | List reminders newest first, 200 |
+| GET | `/api/work-orders/{id}/history` | List history newest first, 200 |
 | DELETE | `/api/work-orders/{id}` | Physically delete ODL and cascading related records, 204 |
 
 Create requires `user_first_name`, `user_last_name`, `user_phone`, `fault_address`,
@@ -66,6 +69,31 @@ The server generates `SOLVO-YYYYMMDD-XXXXXXXXXXXXXXXX` codes using the UTC date
 and 16 random uppercase hexadecimal characters from a UUID; the database enforces
 uniqueness. Status starts at `APERTO`, the reminder counter starts at zero, and
 timestamps are server-managed. Creation and actual status changes record history
-atomically. Status updates have no workflow restrictions in this slice.
+atomically.
+
+Reminder creation requires JSON `{"created_by": 1}` identifying an existing user.
+The existing model requires a non-null user foreign key; this is caller-supplied
+attribution, not authentication. Missing/null/unknown users return 422. The server
+creates the timestamp, increments `reminders_count` in SQL, and appends a
+`REMINDER_CREATED` history entry in a single transaction. A storage failure rolls
+back all three changes. Each successful POST creates a separate reminder.
+Reminders are accepted in any ODL status. Reminder and history lists sort by
+`created_at DESC, id DESC` and return 404 for a nonexistent ODL.
+
+Allowed status changes:
+
+| Current | Allowed next statuses |
+|---|---|
+| `APERTO` | `IN_CORSO`, `ANNULLATO` |
+| `IN_CORSO` | `EVASO`, `ANNULLATO` |
+| `EVASO` | `CHIUSO`, `IN_CORSO` |
+| `CHIUSO` | None |
+| `ANNULLATO` | None |
+
+Same-status requests return 200 without changing timestamps or adding history,
+including in terminal states. Other forbidden transitions return 409; invalid
+enum input returns 422. Real transitions append `STATUS_CHANGED` with the old
+and new status in the same transaction. History also includes `CREATED` and
+`REMINDER_CREATED`; generic no-op patches do not add events.
 
 See `docs/ARCHITECTURE.md` section 10 for the delivered scope and decisions.

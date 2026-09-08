@@ -4,13 +4,15 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import create_app
-from app.models import Category, WorkOrder, WorkOrderHistory
+from app.models import Category, Reminder, User, UserRole, WorkOrder, WorkOrderHistory, WorkOrderStatus
+from app.services import work_orders
 
 URL = "/api/work-orders"
 PAYLOAD = {
@@ -37,6 +39,9 @@ def api():
     Base.metadata.create_all(engine)
     with Session(engine) as db:
         db.add_all([Category(id=1, name="Elettrico"), Category(id=2, name="Idraulico")])
+        db.add(User(
+            id=1, first_name="Ada", last_name="Rossi", phone="12345", role=UserRole.UTENTE
+        ))
         db.commit()
 
     def override_db():
@@ -89,7 +94,10 @@ def test_list_newest_first_and_filters(api):
         db.get(WorkOrder, second["id"]).created_at = datetime(2022, 1, 1)
         db.get(WorkOrder, third["id"]).created_at = datetime(2021, 1, 1)
         db.commit()
-    client.patch(f"{URL}/{second['id']}/status", json={"status": "CHIUSO"})
+    for next_status in ("IN_CORSO", "EVASO", "CHIUSO"):
+        assert client.patch(
+            f"{URL}/{second['id']}/status", json={"status": next_status}
+        ).status_code == 200
     response = client.get(URL)
     assert response.status_code == 200
     assert [row["id"] for row in response.json()] == [second["id"], third["id"], first["id"]]
@@ -125,24 +133,50 @@ def test_get_and_patch(api):
     assert client.patch(url, json={}).json() == partial.json()
 
 
-@pytest.mark.parametrize("status", ["APERTO", "IN_CORSO", "EVASO", "CHIUSO", "ANNULLATO"])
-def test_change_status_and_repeated_request(api, status):
-    client, engine = api
+STATUS_PATHS = {
+    "APERTO": [],
+    "IN_CORSO": ["IN_CORSO"],
+    "EVASO": ["IN_CORSO", "EVASO"],
+    "CHIUSO": ["IN_CORSO", "EVASO", "CHIUSO"],
+    "ANNULLATO": ["ANNULLATO"],
+}
+VALID_EDGES = {
+    ("APERTO", "IN_CORSO"), ("APERTO", "ANNULLATO"),
+    ("IN_CORSO", "EVASO"), ("IN_CORSO", "ANNULLATO"),
+    ("EVASO", "CHIUSO"), ("EVASO", "IN_CORSO"),
+}
+
+
+@pytest.mark.parametrize("old", list(STATUS_PATHS))
+@pytest.mark.parametrize("new", list(STATUS_PATHS))
+def test_status_transition_policy_and_history(api, old, new):
+    client, _ = api
     original = create(client)
     url = f"{URL}/{original['id']}"
-    for _ in range(2):
-        response = client.patch(f"{url}/status", json={"status": status})
+    for next_status in STATUS_PATHS[old]:
+        assert client.patch(f"{url}/status", json={"status": next_status}).status_code == 200
+    before = client.get(url).json()
+    history_before = client.get(f"{url}/history").json()
+    response = client.patch(f"{url}/status", json={"status": new})
+    history_after = client.get(f"{url}/history").json()
+    if old == new:
         assert response.status_code == 200
-        assert response.json()["status"] == status
-    assert client.get(url).json()["status"] == status
-    with Session(engine) as db:
-        history = db.scalars(select(WorkOrderHistory).order_by(WorkOrderHistory.id)).all()
-        assert len(history) == (1 if status == "APERTO" else 2)
-        if status != "APERTO":
-            assert history[-1].event_type == "STATUS_CHANGED"
-            assert history[-1].description == f"Stato ODL: APERTO → {status}"
-    # No workflow restrictions are imposed by this API slice.
-    assert client.patch(f"{url}/status", json={"status": "APERTO"}).status_code == 200
+        assert response.json() == before
+        assert history_after == history_before
+    elif (old, new) in VALID_EDGES:
+        assert response.status_code == 200
+        assert response.json()["status"] == new
+        assert client.get(url).json()["status"] == new
+        assert len(history_after) == len(history_before) + 1
+        assert history_after[0]["event_type"] == "STATUS_CHANGED"
+        assert history_after[0]["description"] == f"Stato ODL: {old} → {new}"
+        assert client.patch(f"{url}/status", json={"status": new}).status_code == 200
+        assert client.get(f"{url}/history").json() == history_after
+    else:
+        assert response.status_code == 409
+        assert old in response.json()["detail"] and new in response.json()["detail"]
+        assert client.get(url).json() == before
+        assert history_after == history_before
 
 
 def test_delete(api):
@@ -212,3 +246,144 @@ def test_invalid_enums(api):
     for params in ({"status": "COMPLETATO"}, {"priority": "CRITICA"}):
         assert client.get(URL, params=params).status_code == 422
     assert client.get(url).json() == original
+
+
+@pytest.mark.parametrize("method,suffix,body", [
+    ("post", "reminders", {"created_by": 1}),
+    ("get", "reminders", None), ("get", "history", None),
+])
+def test_missing_work_order_reminders_and_history(api, method, suffix, body):
+    client, _ = api
+    response = client.request(method, f"{URL}/999/{suffix}", json=body)
+    assert response.status_code == 404
+
+
+def test_create_multiple_reminders_and_history(api):
+    client, engine = api
+    original = create(client)
+    url = f"{URL}/{original['id']}"
+    assert client.get(f"{url}/reminders").json() == []
+    history = client.get(f"{url}/history")
+    assert history.status_code == 200
+    assert len(history.json()) == 1
+    assert history.json()[0]["event_type"] == "CREATED"
+    for count in range(1, 4):
+        response = client.post(f"{url}/reminders", json={"created_by": 1})
+        assert response.status_code == 201
+        reminder = response.json()
+        assert reminder["work_order_id"] == original["id"]
+        assert reminder["created_by"] == 1
+        assert datetime.fromisoformat(reminder["created_at"])
+        assert client.get(url).json()["reminders_count"] == count
+        history = client.get(f"{url}/history").json()
+        assert len(history) == count + 1
+        assert history[0]["event_type"] == "REMINDER_CREATED"
+        assert str(reminder["id"]) in history[0]["description"]
+    with Session(engine) as db:
+        assert len(db.scalars(select(Reminder)).all()) == 3
+    assert client.patch(url, json={}).status_code == 200
+    assert client.patch(url, json={"description": original["description"]}).status_code == 200
+    assert client.get(f"{url}/history").json() == history
+
+
+@pytest.mark.parametrize("body", [
+    {}, {"created_by": None}, {"created_by": 999},
+    {"created_by": 1, "created_at": "2020-01-01T00:00:00Z"},
+    {"created_by": 1, "work_order_id": 999},
+])
+def test_invalid_reminder_creator_and_server_fields(api, body):
+    client, _ = api
+    original = create(client)
+    url = f"{URL}/{original['id']}"
+    history = client.get(f"{url}/history").json()
+    assert client.post(f"{url}/reminders", json=body).status_code == 422
+    assert client.get(url).json() == original
+    assert client.get(f"{url}/reminders").json() == []
+    assert client.get(f"{url}/history").json() == history
+
+
+def test_reminders_and_history_ordering_and_work_order_scope(api):
+    client, engine = api
+    first, second = create(client), create(client)
+    url = f"{URL}/{first['id']}"
+    for work_order in (first, second, first, first):
+        assert client.post(
+            f"{URL}/{work_order['id']}/reminders", json={"created_by": 1}
+        ).status_code == 201
+    with Session(engine) as db:
+        reminders = db.scalars(select(Reminder).where(
+            Reminder.work_order_id == first["id"]
+        ).order_by(Reminder.id)).all()
+        reminders[0].created_at = datetime(2022, 1, 1)
+        reminders[1].created_at = reminders[2].created_at = datetime(2021, 1, 1)
+        reminder_ids = [reminders[0].id, reminders[2].id, reminders[1].id]
+        history = db.scalars(select(WorkOrderHistory).where(
+            WorkOrderHistory.work_order_id == first["id"]
+        ).order_by(WorkOrderHistory.id)).all()
+        history[0].created_at = datetime(2020, 1, 1)
+        history[1].created_at = datetime(2022, 1, 1)
+        history[2].created_at = history[3].created_at = datetime(2021, 1, 1)
+        history_ids = [history[1].id, history[3].id, history[2].id, history[0].id]
+        db.commit()
+    for suffix, ids in (("reminders", reminder_ids), ("history", history_ids)):
+        response = client.get(f"{url}/{suffix}")
+        assert response.status_code == 200
+        assert [row["id"] for row in response.json()] == ids
+        assert all(row["work_order_id"] == first["id"] for row in response.json())
+
+
+@pytest.mark.parametrize("operation", ["reminder", "status"])
+def test_history_failure_rolls_back_entire_mutation(api, operation):
+    client, engine = api
+    original = create(client)
+
+    def fail_history_insert(mapper, connection, target):
+        raise SQLAlchemyError("Simulated history storage failure")
+
+    event.listen(WorkOrderHistory, "before_insert", fail_history_insert)
+    try:
+        with Session(engine) as db:
+            work_order = db.get(WorkOrder, original["id"])
+            with pytest.raises(SQLAlchemyError, match="Simulated history"):
+                if operation == "reminder":
+                    work_orders.create_reminder(db, work_order, 1)
+                else:
+                    work_orders.change_status(db, work_order, WorkOrderStatus.IN_CORSO)
+            assert db.is_active
+            db.refresh(work_order)
+            assert work_order.reminders_count == 0
+            assert work_order.status == WorkOrderStatus.APERTO
+            assert db.scalars(select(Reminder)).all() == []
+            assert len(db.scalars(select(WorkOrderHistory)).all()) == 1
+    finally:
+        event.remove(WorkOrderHistory, "before_insert", fail_history_insert)
+    assert client.get(f"{URL}/{original['id']}").json() == original
+
+
+def test_reminder_increment_uses_database_counter_not_stale_object(api):
+    client, engine = api
+    original = create(client)
+    with Session(engine, expire_on_commit=False) as stale_db:
+        stale_order = stale_db.get(WorkOrder, original["id"])
+        stale_db.commit()
+        assert client.post(
+            f"{URL}/{original['id']}/reminders", json={"created_by": 1}
+        ).status_code == 201
+        assert stale_order.reminders_count == 0
+        work_orders.create_reminder(stale_db, stale_order, 1)
+    assert client.get(f"{URL}/{original['id']}").json()["reminders_count"] == 2
+
+
+def test_status_policy_reloads_stale_status(api):
+    client, engine = api
+    original = create(client)
+    url = f"{URL}/{original['id']}"
+    with Session(engine, expire_on_commit=False) as stale_db:
+        stale_order = stale_db.get(WorkOrder, original['id'])
+        stale_db.commit()
+        assert client.patch(f"{url}/status", json={"status": "ANNULLATO"}).status_code == 200
+        assert stale_order.status == WorkOrderStatus.APERTO
+        with pytest.raises(work_orders.InvalidTransitionError):
+            work_orders.change_status(stale_db, stale_order, WorkOrderStatus.IN_CORSO)
+    assert client.get(url).json()["status"] == "ANNULLATO"
+    assert len(client.get(f"{url}/history").json()) == 2

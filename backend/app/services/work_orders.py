@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update as sql_update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.models import Category, Priority, WorkOrder, WorkOrderHistory, WorkOrderStatus
+from app.domain.work_order_status import InvalidTransitionError, validate_transition
+from app.models import Category, Priority, Reminder, User, WorkOrder, WorkOrderHistory, WorkOrderStatus
 from app.schemas.work_order import WorkOrderCreate, WorkOrderUpdate
 
 
@@ -60,16 +62,69 @@ def update(db: Session, work_order: WorkOrder, data: WorkOrderUpdate) -> WorkOrd
 
 
 def change_status(db: Session, work_order: WorkOrder, status: WorkOrderStatus) -> WorkOrder:
-    if work_order.status != status:
+    try:
+        # Reload and lock the current row before checking its status (PostgreSQL).
+        db.refresh(work_order, with_for_update=True)
+        validate_transition(work_order.status, status)
+        if work_order.status != status:
+            db.add(WorkOrderHistory(
+                work_order_id=work_order.id,
+                event_type="STATUS_CHANGED",
+                description=f"Stato ODL: {work_order.status.value} → {status.value}",
+            ))
+            work_order.status = status
+        db.commit()
+    except (SQLAlchemyError, InvalidTransitionError):
+        db.rollback()
+        raise
+    db.refresh(work_order)
+    return work_order
+
+
+class InvalidReminderCreatorError(Exception):
+    pass
+
+
+def create_reminder(db: Session, work_order: WorkOrder, created_by: int) -> Reminder:
+    if db.get(User, created_by) is None:
+        raise InvalidReminderCreatorError("Utente del sollecito non trovato")
+    reminder = Reminder(work_order_id=work_order.id, created_by=created_by)
+    try:
+        # Increment in SQL, never from a potentially stale in-memory counter.
+        db.execute(
+            sql_update(WorkOrder)
+            .where(WorkOrder.id == work_order.id)
+            .values(reminders_count=WorkOrder.reminders_count + 1)
+        )
+        db.add(reminder)
+        db.flush()
         db.add(WorkOrderHistory(
             work_order_id=work_order.id,
-            event_type="STATUS_CHANGED",
-            description=f"Stato ODL: {work_order.status.value} → {status.value}",
+            event_type="REMINDER_CREATED",
+            description=f"Sollecito #{reminder.id} creato dall'utente #{created_by}",
         ))
-        work_order.status = status
         db.commit()
-        db.refresh(work_order)
-    return work_order
+    except SQLAlchemyError:
+        db.rollback()
+        raise
+    db.refresh(reminder)
+    return reminder
+
+
+def list_reminders(db: Session, work_order: WorkOrder) -> list[Reminder]:
+    return list(db.scalars(
+        select(Reminder)
+        .where(Reminder.work_order_id == work_order.id)
+        .order_by(Reminder.created_at.desc(), Reminder.id.desc())
+    ))
+
+
+def list_history(db: Session, work_order: WorkOrder) -> list[WorkOrderHistory]:
+    return list(db.scalars(
+        select(WorkOrderHistory)
+        .where(WorkOrderHistory.work_order_id == work_order.id)
+        .order_by(WorkOrderHistory.created_at.desc(), WorkOrderHistory.id.desc())
+    ))
 
 
 def delete(db: Session, work_order: WorkOrder) -> None:
