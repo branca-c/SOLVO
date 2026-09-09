@@ -2,16 +2,16 @@ import { useState } from 'react'
 import { api, messageFor } from '../services/api'
 import { ErrorMessage } from './Feedback'
 
-export function NotifyAssignment({ id, onSent }: { id: number; onSent: () => void }) {
+export function NotifyAssignment({ id, onSent, onBusy }: { id: number; onSent: () => void; onBusy?: (busy: boolean) => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<{ provider: string; action_url: string }>()
   async function send() {
     if (busy) return
-    setBusy(true); setError(''); setResult(undefined)
+    setBusy(true); onBusy?.(true); setError(''); setResult(undefined)
     try { setResult(await api.notifyAssignment(id)); onSent() }
     catch (e) { setError(messageFor(e)) }
-    finally { setBusy(false) }
+    finally { setBusy(false); onBusy?.(false) }
   }
   return <div className="assignment-notify">
     <button className="button button-primary" disabled={busy} onClick={send}>{busy ? 'Invio…' : 'Invia WhatsApp'}</button>

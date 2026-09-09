@@ -99,9 +99,8 @@ creation without a configured category, and failed loads can be retried.
 AI drafts select a configured category by ID, or by an unambiguous normalized
 name if the ID is unavailable; unresolved categories require manual selection.
 
-Existing scope still applies: routing start and reminder creation use the API
-(`/docs`), while the UI supports intake, detail/status actions and technician
-notification/action links. This bootstrap does not add workflow controls.
+Operator assignment and reminder controls are now available in ODL detail, as
+described below. They reuse the existing APIs.
 
 ## WorkOrder API
 
@@ -244,8 +243,8 @@ La pagina Tecnici mostra categoria, ordine escalation, ruolo e telefono senza CR
 history e assegnazioni, con errori e ricaricamento indipendenti delle sezioni.
 Il form crea un ODL e apre il suo dettaglio con conferma inline. Le azioni di
 stato propongono solo le transizioni consentite; il backend resta autorevole e
-le modifiche riuscite ricaricano ODL e history. Non vengono avviate assegnazioni
-né creati solleciti dal frontend in questa slice.
+le modifiche riuscite ricaricano ODL e history. Il dettaglio espone anche i
+controlli di assegnazione e sollecito descritti sotto.
 
 Verifiche frontend:
 
@@ -350,7 +349,7 @@ is the frontend origin, without `/tecnico`. On a smartphone use a reachable fron
 host instead of loopback, and start Vite with `npm run dev -- --host 0.0.0.0`.
 The host must serve the SPA for `/tecnico/assegnazione/*` (Vite does this locally).
 
-1. Start an assignment using the existing assignment API.
+1. In ODL detail, click **Assegna tecnico** to start an assignment.
 2. In ODL detail, click **Invia WhatsApp**, or POST `/api/assignments/{id}/notify`.
 3. With default `WHATSAPP_PROVIDER=mock`, no network request occurs. The response
    reports `simulated` and includes `action_url`; **Apri link tecnico** opens it.
@@ -410,3 +409,37 @@ there is no durable queue, replay or cross-process fan-out. The in-memory manage
 is single-instance only and this unauthenticated operator feed belongs on the same
 trusted network as the operator APIs. Multi-instance pub/sub and AWS scaling are
 tracked in ROADMAP; neither is implemented here.
+
+### Operator controls in ODL detail
+
+In **Assegnazioni**, **Assegna tecnico** starts routing when the ODL has no
+assignment attempts and is not CHIUSO/ANNULLATO. The backend forbids restarting
+an existing chain even when no PENDING attempt remains, so ACCEPTED shows the
+technician and status without a restart button.
+
+The current PENDING attempt shows technician name, PENDING, **Invia WhatsApp**,
+**Nessuna risposta**, and **Escala al caposquadra**. No-response advances to the
+next configured technician; escalation selects an untried team leader. The
+backend decides eligibility and returns a visible conflict if no candidate exists.
+No operator accept/reject controls are added. Terminal ODLs hide all assignment
+mutation controls, including notification. Requests disable controls while in
+flight; errors are shown inline and mutations are never retried automatically.
+
+For **Aggiungi sollecito**, configure `frontend/.env` using the real user ID
+printed by the demo seed (the following value is only an example):
+
+```dotenv
+VITE_DEMO_USER_ID=1
+```
+
+This is local/demo attribution only because authentication is not implemented.
+It is a public frontend value, not a secret or authenticated production identity.
+There is no fallback ID. Missing/invalid values disable reminder creation; a
+nonexistent database user produces the backend validation error. Restart Vite
+(or rebuild a demo preview) after changing the value. Reminders remain allowed
+in every ODL status, matching the existing endpoint.
+
+Successful local actions immediately refetch assignments, reminders, history
+and the ODL including `reminders_count`, and show inline feedback. Existing
+WebSocket refreshes remain active. Assignment notifications still refresh history
+and expose the existing technician link; sending remains an explicit action.

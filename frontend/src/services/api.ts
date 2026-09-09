@@ -46,6 +46,10 @@ export function messageFor(error: unknown): string {
   return error instanceof Error ? error.message : 'Si è verificato un errore. Riprova.'
 }
 export const api = {
+  startAssignment: (id: number) => request<Assignment>(`/work-orders/${id}/assignments/start`, { method: 'POST' }),
+  noResponse: (id: number) => request<Assignment>(`/assignments/${id}/no-response`, { method: 'POST' }),
+  escalateTeamLeader: (id: number) => request<Assignment>(`/work-orders/${id}/assignments/escalate-team-leader`, { method: 'POST' }),
+  addReminder: (id: number, createdBy: number) => request<Reminder>(`/work-orders/${id}/reminders`, { method: 'POST', body: JSON.stringify({ created_by: createdBy }) }),
   categories: () => request<Category[]>('/categories'),
   technicians: (categoryId?: number, signal?: AbortSignal) => request<Technician[]>(`/technicians${categoryId === undefined ? '' : `?category_id=${categoryId}`}`, { signal }),
   publicAssignment: (token: string, signal?: AbortSignal) => request<PublicAssignment>(`/public/assignments/${encodeURIComponent(token)}`, { signal, cache: 'no-store' }),

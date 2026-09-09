@@ -210,7 +210,8 @@ navigates to the created ODL with inline success feedback.
 
 Detail displays ODL data and reads reminders, history and assignments. The status
 action offers only the transitions in section 10 and reloads data after success.
-The frontend does not expose technician assignment actions or reminder creation.
+The operator controls described in section 17 expose assignment start, no-response,
+team-leader escalation and reminder creation through existing endpoints.
 Loading, empty, recoverable error and success states are included. Dashboard and
 ODL and Tecnici navigation are functional; Impostazioni is a disabled placeholder.
 Data is fetched on entry, refresh and successful mutations; Dashboard and ODL detail also refresh through the realtime slice below.
@@ -319,3 +320,16 @@ An explicit local seed creates the 13 initial categories, three normal technicia
 and one team leader per category, plus one demo requester usable for reminders.
 It is idempotent, never runs on startup and never seeds ODLs. No authentication,
 reference-data editing or additional workflow controls are introduced.
+
+## 17. Delivered operator detail controls
+
+Nonterminal ODLs without assignment attempts expose Assegna tecnico. Existing
+chains cannot restart under the current backend contract; ACCEPTED displays the
+technician and status. Current PENDING exposes notification, Nessuna risposta
+and Escala al caposquadra. Terminal ODLs hide assignment mutations. Acceptance
+and refusal remain on the technician mobile page.
+Aggiungi sollecito uses explicitly configured VITE_DEMO_USER_ID for demo-only
+attribution until authentication exists, with no default identity. Missing/invalid
+configuration disables the button. The backend validates user existence.
+Local actions refresh ODL, assignments, reminders and history immediately;
+WebSocket behavior is unchanged. Errors are inline; no automatic mutation retry.

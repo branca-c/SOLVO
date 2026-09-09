@@ -395,3 +395,17 @@ ODL tables/detail/assignments, and all intake modes use one select. Draft resolu
 an existing ID, otherwise one normalized exact name match, including when the
 category request completes after analysis. API creation still validates category
 existence. No new dependencies, settings, providers or workflow mutations.
+
+## 17. Operator detail actions
+
+Frontend API methods wrap the existing assignment start/no-response/escalation
+and reminder POSTs. ActivityPanels receives ODL status and the detail refresh
+callback. Successful mutations invalidate local resource reads immediately;
+errors also refetch authoritative state without retrying the write. The existing
+WebSocket hook and backend are unchanged. Buttons are disabled during mutations
+and assignment refresh, and terminal status hides assignment mutation controls.
+Start is offered only for an empty chain because the existing endpoint rejects
+all repeat starts, including after acceptance. No routing policy is reimplemented.
+VITE_DEMO_USER_ID is an explicit positive safe integer with no default, sent as
+created_by for demo reminders only. It provides attribution, not authentication,
+and does not create or validate the database user locally.

@@ -76,7 +76,7 @@ it('operator notifies the pending technician and refreshes history', async () =>
     technician: { id: 1, first_name: 'Ada', last_name: 'Rossi', phone: '+393331234567', email: null, category_id: 1, escalation_order: 1, is_team_leader: false },
   }])
   const notify = vi.spyOn(api, 'notifyAssignment').mockResolvedValue({ provider: 'mock', message_id: 'mock-1', status: 'simulated', action_url: 'http://localhost:5173/tecnico/assegnazione/token' })
-  render(<ActivityPanels id={1} />)
+  render(<ActivityPanels id={1} status="APERTO" onChanged={vi.fn()} />)
   await screen.findByRole('button', { name: 'Invia WhatsApp' })
   await userEvent.click(screen.getByRole('button', { name: 'Invia WhatsApp' }))
   await screen.findByText('Invio simulato: nessun messaggio WhatsApp inviato.')

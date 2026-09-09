@@ -29,7 +29,7 @@ export function WorkOrderDetail({ id, created = false }: { id: number; created?:
         <div className="description"><h3>Descrizione del guasto</h3><p>{order.description}</p></div>
       </section>
       <StatusActions key={`${order.id}-${order.status}`} order={order} onChanged={text => { setMessage(text); refresh() }} />
-      <ActivityPanels key={id} id={id} refreshVersion={activityVersion} />
+      <ActivityPanels key={id} id={id} status={order.status} onChanged={refresh} refreshVersion={activityVersion} />
     </>}
   </>
 }

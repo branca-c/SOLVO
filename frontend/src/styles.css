@@ -268,3 +268,6 @@ dd { margin: 0; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
 
 .realtime-status { color: #697386; font-size: 12px; margin: 0 0 16px; }
 .realtime-status span { color: #18BFAE; }
+
+.operator-actions { border: 0; padding: 0; margin: 12px 0 0; min-width: 0; }
+.operator-actions .heading-actions { flex-wrap: wrap; margin-top: 8px; }
