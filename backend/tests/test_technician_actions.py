@@ -4,7 +4,7 @@ from pydantic import SecretStr
 
 from app.core.config import get_settings
 from app.services.assignment_links import sign_assignment, validate_token, InvalidActionTokenError
-from app.services.whatsapp import MockWhatsAppProvider, TwilioWhatsAppProvider, NotificationUnavailableError
+from app.services.notifications import MockNotificationProvider, TelegramNotificationProvider, NotificationUnavailableError
 from tests.test_assignments_api import configure, start, history, assignment_url
 from tests.test_work_orders_api import create
 
@@ -13,7 +13,7 @@ from tests.test_work_orders_api import create
 def configuration(monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, 'assignment_action_secret', SecretStr('test-only-secret-' * 4))
-    monkeypatch.setattr(settings, 'whatsapp_provider', 'mock')
+    monkeypatch.setattr(settings, 'notification_provider', 'mock')
     monkeypatch.setattr(settings, 'technician_action_base_url', 'http://127.0.0.1:5173')
     monkeypatch.setattr(settings, 'technician_action_token_ttl_minutes', 1440)
     return settings
@@ -102,14 +102,14 @@ def test_invalid_expired_missing_tokens(api, configuration, suffix, method):
 def test_notify_mock_message_and_history(pending, monkeypatch):
     client, order, assignment, _ = pending
     def network_forbidden(*args, **kwargs):
-        raise AssertionError('Mock must not contact Twilio')
+        raise AssertionError('Mock must not construct an HTTP client')
     monkeypatch.setattr(httpx, 'Client', network_forbidden)
     captured = []
-    original = MockWhatsAppProvider.send
+    original = MockNotificationProvider.send
     def capture(self, phone, message):
         captured.append((phone, message))
         return original(self, phone, message)
-    monkeypatch.setattr(MockWhatsAppProvider, 'send', capture)
+    monkeypatch.setattr(MockNotificationProvider, 'send', capture)
     response = client.post(f"/api/assignments/{assignment['id']}/notify")
     assert response.status_code == 200
     result = response.json()
@@ -119,7 +119,7 @@ def test_notify_mock_message_and_history(pending, monkeypatch):
     message = captured[0][1]
     for expected in ['SOLVO', order['code'], order['priority'], order['fault_address'], 'Elettrico', result['action_url']]:
         assert expected in message
-    assert captured[0][0] == assignment['technician']['phone']
+    assert captured[0][0] == assignment['technician_id']
     assert order['user_phone'] not in message
     events = history(client, order)
     assert events[0]['event_type'] == 'ASSIGNMENT_NOTIFICATION_SENT'
@@ -154,45 +154,104 @@ def test_notify_provider_failure_has_no_success_history(pending, monkeypatch):
     before = history(client, order)
     def fail(*args):
         raise NotificationUnavailableError('Invio non disponibile')
-    monkeypatch.setattr(MockWhatsAppProvider, 'send', fail)
+    monkeypatch.setattr(MockNotificationProvider, 'send', fail)
     assert client.post(f"/api/assignments/{assignment['id']}/notify").status_code == 503
     assert history(client, order) == before
     assert client.get(assignment_url(order) + '/current').json()['status'] == 'PENDING'
 
 
-def test_twilio_request_uses_sandbox_addresses_without_live_network(monkeypatch):
+def test_telegram_notify_request_and_server_only_token(pending, monkeypatch, caplog):
+    import json
+    import logging
+    client, order, assignment, _ = pending
+    settings = get_settings()
+    monkeypatch.setattr(settings, 'notification_provider', 'telegram')
+    monkeypatch.setattr(settings, 'telegram_bot_token', SecretStr('123456:test-private-token'))
+    monkeypatch.setattr(settings, 'telegram_demo_chat_id', '987654')
     requests = []
     def handler(request):
         requests.append(request)
-        return httpx.Response(201, json={'sid': 'SM' + 'a' * 32, 'status': 'queued'})
+        return httpx.Response(200, json={'ok': True, 'result': {'message_id': 42}})
     real_client = httpx.Client
     monkeypatch.setattr(httpx, 'Client', lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
-    provider = TwilioWhatsAppProvider('AC' + 'b' * 32, 'test-token', 'whatsapp:+14155238886')
-    result = provider.send('+393331234567', 'SOLVO link')
-    assert result.status == 'submitted'
-    assert str(requests[0].url) == 'https://api.twilio.com/2010-04-01/Accounts/AC' + 'b' * 32 + '/Messages.json'
-    assert b'To=whatsapp%3A%2B393331234567' in requests[0].content
-    assert b'From=whatsapp%3A%2B14155238886' in requests[0].content
+    with caplog.at_level(logging.DEBUG):
+        response = client.post(f"/api/assignments/{assignment['id']}/notify")
+    assert response.status_code == 200
+    result = response.json()
+    assert result['provider'] == 'telegram'
+    assert result['message_id'] == '42'
+    assert result['status'] == 'submitted'
+    assert len(requests) == 1
+    assert requests[0].method == 'POST'
+    assert str(requests[0].url) == 'https://api.telegram.org/bot123456:test-private-token/sendMessage'
+    payload = json.loads(requests[0].content)
+    assert payload['chat_id'] == '987654'
+    assert payload['link_preview_options'] == {'is_disabled': True}
+    assert 'reply_markup' not in payload
+    assert 'parse_mode' not in payload
+    for expected in ['SOLVO', order['code'], order['priority'], order['fault_address'], 'Elettrico', result['action_url']]:
+        assert expected in payload['text']
+    for private in [order['user_phone'], order['user_first_name'], order['user_last_name']]:
+        assert private not in payload['text']
+    events = history(client, order)
+    assert events[0]['event_type'] == 'ASSIGNMENT_NOTIFICATION_SENT'
+    assert 'telegram' in events[0]['description']
+    assert 'test-private-token' not in response.text + str(events) + caplog.text
+    assert result['action_url'] not in events[0]['description']
+    token = result['action_url'].rsplit('/', 1)[1]
+    assert validate_token(token, settings) == assignment['id']
 
 
-def test_twilio_error_sanitized(monkeypatch):
+@pytest.mark.parametrize('status,body', [
+    (401, {'description': 'private'}), (429, {'ok': False}),
+    (200, {'ok': False}), (200, []), (200, {'ok': True, 'result': None}),
+    (200, {'ok': True, 'result': {'message_id': True}}),
+    (200, {'ok': True, 'result': {'message_id': 'private'}}),
+])
+def test_telegram_error_sanitized(monkeypatch, status, body):
     real_client = httpx.Client
-    monkeypatch.setattr(httpx, 'Client', lambda **kwargs: real_client(transport=httpx.MockTransport(lambda request: httpx.Response(401, json={'message': 'secret'})), **kwargs))
+    monkeypatch.setattr(httpx, 'Client', lambda **kwargs: real_client(transport=httpx.MockTransport(lambda request: httpx.Response(status, json=body)), **kwargs))
     with pytest.raises(NotificationUnavailableError) as error:
-        TwilioWhatsAppProvider('AC' + 'b' * 32, 'private', '+14155238886').send('+393331234567', 'text')
+        TelegramNotificationProvider('123:private', '987').send(1, 'text')
     assert 'private' not in str(error.value)
-    assert 'secret' not in str(error.value)
+    assert error.value.__suppress_context__
 
 
-@pytest.mark.parametrize('provider', ['twilio', 'unknown'])
-def test_invalid_provider_configuration_does_not_mutate(pending, monkeypatch, provider):
+@pytest.mark.parametrize('provider,token,chat', [
+    ('telegram', '', '987'), ('telegram', '123:token', ''),
+    ('telegram', 'invalid/token', '987'), ('telegram', '123:token', 'invalid'),
+    ('unknown', '', ''),
+])
+def test_invalid_provider_configuration_does_not_mutate(pending, monkeypatch, provider, token, chat):
     client, order, assignment, _ = pending
     settings = get_settings()
-    monkeypatch.setattr(settings, 'whatsapp_provider', provider)
-    monkeypatch.setattr(settings, 'twilio_account_sid', '')
+    monkeypatch.setattr(settings, 'notification_provider', provider)
+    monkeypatch.setattr(settings, 'telegram_bot_token', SecretStr(token))
+    monkeypatch.setattr(settings, 'telegram_demo_chat_id', chat)
     before = history(client, order)
-    assert client.post(f"/api/assignments/{assignment['id']}/notify").status_code == 503
+    response = client.post(f"/api/assignments/{assignment['id']}/notify")
+    assert response.status_code == 503
+    if provider == 'telegram':
+        assert 'TELEGRAM_BOT_TOKEN e TELEGRAM_DEMO_CHAT_ID' in response.json()['detail']
     assert history(client, order) == before
+
+
+def test_mock_is_deterministic():
+    provider = MockNotificationProvider()
+    assert provider.send(1, 'message') == provider.send(1, 'message')
+    assert provider.send(1, 'message') != provider.send(2, 'message')
+
+
+def test_telegram_timeout_is_not_retried(monkeypatch):
+    calls = []
+    def handler(request):
+        calls.append(request)
+        raise httpx.ReadTimeout('private', request=request)
+    real_client = httpx.Client
+    monkeypatch.setattr(httpx, 'Client', lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
+    with pytest.raises(NotificationUnavailableError, match='Invio Telegram non confermato'):
+        TelegramNotificationProvider('123:private', '987').send(1, 'text')
+    assert len(calls) == 1
 
 
 def test_secret_rotation_revokes_existing_token(pending, monkeypatch):

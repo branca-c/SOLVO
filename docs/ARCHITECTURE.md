@@ -87,7 +87,7 @@ Define narrow application ports for:
 - `AIInterpreter`: text/transcript to a versioned ODL draft proposal;
 - `Transcriber`: audio asset to Italian transcript;
 - `ObjectStore`: put/get/delete application-owned audio objects;
-- `Notifier`: technician assignment notification containing a mobile link.
+- `NotificationProvider`: technician assignment notification containing a mobile link.
 
 The first implementation of every port is local and deterministic. This enables the full demo and automated tests without external accounts, network calls, or cloud costs. Provider selection occurs through configuration, never scattered conditionals.
 
@@ -119,9 +119,12 @@ Formatting, linting, static typing, migrations, tests, and production builds bec
 
 ## 9. Deferred deployment mapping
 
-The reference architecture maps the static frontend to S3/CloudFront, the containerized FastAPI/WebSocket backend to one EC2 instance, PostgreSQL to RDS, audio to S3, transcription to Amazon Transcribe, AI to Amazon Bedrock, and messaging to Twilio WhatsApp. IAM, Secrets Manager, CloudWatch, and AWS Budgets support least privilege, secrets, basic observability, and cost control.
-
-This is a target mapping only. No cloud resource, SDK integration, credential, or deployment automation belongs in the project until its explicit roadmap step.
+AWS deployment remains deferred in `docs/ROADMAP.md`; no AWS resources are implemented.
+The delivered MVP uses one FastAPI backend with in-memory WebSocket realtime,
+PostgreSQL, and Telegram Bot API or a deterministic mock for notifications.
+Cloudflare Quick Tunnel is temporary development/demo access to Vite only, not a
+production architecture component. The PDF's notification mapping is superseded by
+this explicit decision and requires manual regeneration.
 
 
 ## 10. Delivered WorkOrder API slice (2026-09-08)
@@ -325,12 +328,29 @@ access logs at the server/proxy must redact token paths. Operator APIs have no l
 in this delivery and must remain on a trusted network; token validation protects
 the public endpoints only.
 
-A WhatsApp protocol receives only recipient and message. Mock returns a deterministic
-hash-based ID without HTTP. Twilio uses the existing HTTPX dependency with bounded
-network timeout, server-side Basic authentication, fixed Twilio API host and
-WhatsApp-prefixed international addresses. Credentials are SecretStr configuration;
-provider response/errors are sanitized. No SDK, scheduler, webhook or transport is
-introduced into routing. Unknown providers and incomplete configuration fail closed.
+`services/notifications.py` defines NotificationProvider.send(technician_id, message)
+and immutable Delivery metadata. MockNotificationProvider returns a deterministic
+hash-based ID without constructing an HTTP client. TelegramNotificationProvider
+uses the existing HTTPX dependency to POST HTTPS JSON to the fixed Telegram Bot API
+host, with a 10-second timeout, plain text and disabled link previews. The bot token
+is a server-only SecretStr. HTTP request URL logging redacts bot credentials;
+provider errors omit raw responses, URLs and exception chains. Responses require
+`ok=true` and a positive integer message_id before recording submission success.
+`NOTIFICATION_PROVIDER=mock|telegram` selects the provider without routing changes.
+Unknown providers and incomplete/invalid configuration fail closed with 503.
+
+Demo destination resolution belongs to the Telegram adapter: TELEGRAM_DEMO_CHAT_ID
+is used for every technician ID. No phone-to-chat conversion, model field or migration
+is introduced. The signed link still identifies the actual routed assignment.
+Production identity and reliable delivery work belong only in ROADMAP. No SDK,
+scheduler, background job, Telegram webhook or inline callback is introduced.
+
+For phone demos the Quick Tunnel URL becomes TECHNICIAN_ACTION_BASE_URL and its
+exact hostname is explicitly allowed by Vite using its additional-host environment
+setting. Vite proxies REST and WebSocket to the same backend. The tunnel and operator
+APIs are unauthenticated, so this temporary exposure is limited to fictional demo
+data and stopped afterwards. README contains the manual flow; no installation or
+setup script, wildcard host allowance or temporary URL is committed.
 
 Notification orchestration reuses the parent-row lock/current-PENDING check so
 assignment transitions cannot race an active submission on PostgreSQL. Successful

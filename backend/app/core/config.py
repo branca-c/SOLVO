@@ -17,10 +17,9 @@ class Settings(BaseSettings):
     assignment_action_secret: SecretStr = SecretStr("")
     technician_action_base_url: str = "http://127.0.0.1:5173"
     technician_action_token_ttl_minutes: int = Field(default=1440, ge=1, le=10080)
-    whatsapp_provider: str = "mock"
-    twilio_account_sid: str = ""
-    twilio_auth_token: SecretStr = SecretStr("")
-    twilio_whatsapp_from: str = ""
+    notification_provider: str = "mock"
+    telegram_bot_token: SecretStr = SecretStr("")
+    telegram_demo_chat_id: str = ""
     ai_provider: str = "mock"
     transcription_provider: str = "mock"
     transcription_mock_text: str = "Perdita di acqua dal tubo del bagno."

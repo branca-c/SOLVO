@@ -41,7 +41,7 @@ it('starts once, refreshes history and shows the pending technician without a We
   expect(screen.getByText('PENDING')).toBeTruthy()
   expect(screen.getByText('Assegnazione avviata.')).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Assegna tecnico' })).toBeNull()
-  expect(screen.getByRole('button', { name: 'Invia WhatsApp' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Invia Telegram' })).toBeTruthy()
   await waitFor(() => expect(api.history).toHaveBeenCalledTimes(2))
 })
 
@@ -58,7 +58,7 @@ it.each(['no-response', 'escalation'])('advances pending via %s and displays its
   await userEvent.click(screen.getByRole('button', { name: action === 'escalation' ? 'Escala al caposquadra' : 'Nessuna risposta' }))
   await screen.findByText('Demo Due')
   expect(mutation).toHaveBeenCalledWith(action === 'escalation' ? 1 : 12)
-  expect(screen.getAllByRole('button', { name: 'Invia WhatsApp' })).toHaveLength(1)
+  expect(screen.getAllByRole('button', { name: 'Invia Telegram' })).toHaveLength(1)
   await waitFor(() => expect(api.history).toHaveBeenCalledTimes(2))
   expect(screen.queryByRole('button', { name: 'Accetta' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Rifiuta' })).toBeNull()
@@ -103,7 +103,7 @@ it('shows accepted technician and does not offer an invalid routing restart', as
   await screen.findByText('ACCEPTED')
   expect(screen.getByText('Demo Uno')).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Assegna tecnico' })).toBeNull()
-  expect(screen.queryByRole('button', { name: 'Invia WhatsApp' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Invia Telegram' })).toBeNull()
 })
 
 it('shows routing errors without success or retrying the mutation', async () => {

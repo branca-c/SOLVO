@@ -78,7 +78,7 @@ def test_assignment_and_public_action_events(api, published, monkeypatch):
     client, engine = api
     settings = get_settings()
     monkeypatch.setattr(settings, 'assignment_action_secret', SecretStr('test-secret-' * 4))
-    monkeypatch.setattr(settings, 'whatsapp_provider', 'mock')
+    monkeypatch.setattr(settings, 'notification_provider', 'mock')
     configure(engine)
     order = create(client)
     first = start(client, order)

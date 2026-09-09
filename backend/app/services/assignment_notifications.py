@@ -5,7 +5,7 @@ from app.models import Assignment
 from app.schemas.public_assignment import NotificationResponse, PublicAssignment
 from app.services import assignments
 from app.services.assignment_links import action_url
-from app.services.whatsapp import create_whatsapp_provider
+from app.services.notifications import create_notification_provider
 
 
 def public_details(db: Session, assignment_id: int) -> PublicAssignment:
@@ -30,9 +30,9 @@ def notify(db: Session, assignment_id: int, settings: Settings) -> NotificationR
     with assignments._transaction(db) as events:
         assignment, order, _ = assignments._action_target(db, assignment_id)
         url = action_url(assignment.id, settings)
-        provider = create_whatsapp_provider(settings)
-        message = f'SOLVO · {order.code}\nPriorità: {order.priority.value}\n{order.fault_address}\nCategoria: {order.category.name}\nApri intervento: {url}'
-        result = provider.send(assignment.technician.phone, message)
+        provider = create_notification_provider(settings)
+        message = f'SOLVO — Nuovo intervento\nODL: {order.code}\nPriorità: {order.priority.value}\nIndirizzo: {order.fault_address}\nCategoria: {order.category.name}\nApri intervento: {url}'
+        result = provider.send(assignment.technician_id, message)
         assignments._history(
             db, order.id, 'ASSIGNMENT_NOTIFICATION_SENT',
             f'Assegnazione #{assignment.id}: notifica {result.provider}, {result.status}, riferimento {result.message_id}.',

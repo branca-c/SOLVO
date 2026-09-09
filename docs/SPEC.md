@@ -274,18 +274,23 @@ return 422. There is no login system in this delivery.
 
 `POST /api/assignments/{id}/notify` is an explicit operator action for the current
 PENDING assignment on a nonterminal ODL. It builds the signed mobile link and sends
-SOLVO, ODL code, priority, address and category to the assigned technician. Creation,
+SOLVO, ODL code, priority, address and category to the configured demo chat. Creation,
 rejection and escalation never send messages automatically. The response includes
 provider, message ID, submission status and action URL. A meaningful history event
 records successful submission or simulation. Provider errors return 503 without a
 false success history event. Mock is default and performs no external calls; the
-Twilio adapter supports Sandbox free-form submission within its service window.
+Telegram Bot API adapter sends HTTPS messages to the server-configured numeric
+TELEGRAM_DEMO_CHAT_ID. All demo technician notifications share this destination;
+the Technician model is unchanged. Telegram is the selected MVP/demo transport.
 Submission does not claim confirmed delivery; no receipt webhook is implemented.
+The signed action link and mobile page remain the response mechanism.
+Cloudflare Quick Tunnel provides temporary phone-accessible demo URLs configured
+through TECHNICIAN_ACTION_BASE_URL; it is not production architecture.
 
 The mobile route `/tecnico/assegnazione/:token` has no operator sidebar, shows
 large accept/refuse actions and optional refusal notes, handles invalid links and
 conflicts inline, and displays completed states. ODL detail highlights the current/
-latest assignment and offers **Invia WhatsApp** for the pending attempt with inline
+latest assignment and offers **Invia Telegram** for the pending attempt with inline
 feedback and its action link. Dashboard and ODL detail now refresh through WebSocket.
 
 ## 15. Delivered realtime slice

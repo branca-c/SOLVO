@@ -4,6 +4,12 @@
 
 Build SOLVO incrementally as a simple, reliable, demonstrable MVP for facility-maintenance work orders (ODL). The functional and technical source of truth is `docs/design/SOLVO_Guida_Tecnica_MVP_v0.1 (2).pdf`; the visual source of truth is `docs/design/guida_stile_solvo_e_dashboard_ticket (1).png`.
 
+The selected MVP/demo notification transport is Telegram Bot API, with a deterministic
+mock provider and signed technician action links. This explicit scope correction
+supersedes the messaging architecture in the technical PDF, which needs manual
+regeneration. Cloudflare Quick Tunnel is for temporary development/demo phone access
+only; keep the single FastAPI backend and WebSocket realtime.
+
 Before implementing a step, read `docs/SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DESIGN_SYSTEM.md`, and the relevant section of `docs/ROADMAP.md`.
 
 ## Scope rules

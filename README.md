@@ -24,7 +24,7 @@ When documents conflict, the PDF governs functional/technical intent and the PNG
 - Technician routing: configured category technicians by escalation order, with team leaders last.
 - Technician refusal: optional notes only.
 - Intended stack: React + TypeScript, FastAPI + Pydantic, PostgreSQL, REST + WebSocket.
-- Local deterministic providers come first; external/AWS integrations are deferred.
+- Local deterministic providers come first; Telegram Bot API is available for demo notifications; AWS integrations are deferred.
 - No SLA or "tempo aperto" is part of the MVP.
 
 ## Backend development
@@ -337,7 +337,7 @@ edit the shared form, then select **Conferma e crea ODL**. Audio analysis never 
 an ODL. Audio is temporary only; no files or audio records are retained by this slice.
 Amazon Transcribe remains the future production provider described in the roadmap.
 
-### Technician action links and WhatsApp Sandbox
+### Technician action links and Telegram Bot API
 
 Configure `ASSIGNMENT_ACTION_SECRET` with at least 32 random bytes; generate a value
 with `python -c "import secrets; print(secrets.token_urlsafe(32))"` and save it only in
@@ -346,12 +346,12 @@ makes action-link endpoints fail closed with 503. Tokens expire after
 `TECHNICIAN_ACTION_TOKEN_TTL_MINUTES=1440` (1–10080 supported); rotating the secret
 invalidates all existing links. `TECHNICIAN_ACTION_BASE_URL=http://127.0.0.1:5173`
 is the frontend origin, without `/tecnico`. On a smartphone use a reachable frontend
-host instead of loopback, and start Vite with `npm run dev -- --host 0.0.0.0`.
+URL instead of loopback, following the Quick Tunnel flow below.
 The host must serve the SPA for `/tecnico/assegnazione/*` (Vite does this locally).
 
 1. In ODL detail, click **Assegna tecnico** to start an assignment.
-2. In ODL detail, click **Invia WhatsApp**, or POST `/api/assignments/{id}/notify`.
-3. With default `WHATSAPP_PROVIDER=mock`, no network request occurs. The response
+2. In ODL detail, click **Invia Telegram**, or POST `/api/assignments/{id}/notify`.
+3. With default `NOTIFICATION_PROVIDER=mock`, no network request occurs. The response
    reports `simulated` and includes `action_url`; **Apri link tecnico** opens it.
 4. The mobile page shows only intervention details, with **Accetta intervento** and
    **Rifiuta**, followed by optional notes and confirmation. It calls the public
@@ -360,14 +360,65 @@ The host must serve the SPA for `/tecnico/assegnazione/*` (Vite does this locall
 5. A successful rejection creates the next pending assignment; notification of that
    next assignment is still an explicit operator action. Dashboard and ODL detail now refresh automatically through the realtime slice below.
 
-For an actual Sandbox submission set `WHATSAPP_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`,
-`TWILIO_AUTH_TOKEN`, and `TWILIO_WHATSAPP_FROM=whatsapp:+...` to your Sandbox values.
-Configure technician phones in international `+...` format. The recipient must join
-your Sandbox by sending its join keyword, then send a message to open the 24-hour
-customer-service window for free-form messages. See [Twilio Sandbox documentation](https://www.twilio.com/docs/whatsapp/sandbox).
-No production templates are implemented. HTTPX submits to Twilio with server-side
-credentials and a 10-second timeout; `submitted` means provider acceptance, not
-confirmed WhatsApp delivery. Tests use mocked HTTP transport; no real messages are sent.
+For actual Telegram submission, configure the root/backend `.env`:
+
+```dotenv
+NOTIFICATION_PROVIDER=telegram
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_DEMO_CHAT_ID=
+```
+
+Create a bot through Telegram's **@BotFather**, save its token only in the backend
+configuration, then open your bot on your phone and press **Start** or send a message.
+Obtain your numeric chat ID from `result[].message.chat.id` using a one-off,
+server-side Bot API `getUpdates` request with your token. Do not put the token in
+frontend configuration, browser URLs, screenshots, or shared logs. SOLVO implements
+no polling loop or Telegram webhook. See the official [Bot API](https://core.telegram.org/bots/api#getupdates).
+Restart FastAPI after changing settings.
+
+**Demo shortcut:** all technician notifications go to `TELEGRAM_DEMO_CHAT_ID`,
+regardless of which technician routing selected. Technician phone numbers are not
+Telegram destinations. No Technician field or database migration is added.
+Production notification identity/channel work is tracked only in `docs/ROADMAP.md`.
+
+HTTPX sends HTTPS JSON to Telegram's server-side `sendMessage` endpoint with a
+10-second timeout. The message contains SOLVO, ODL code, priority, category,
+fault address and the signed action URL; requester contacts are omitted. Link
+previews are disabled and no inline callback buttons are used. The response includes
+`provider=telegram`, the string message ID, `status=submitted`, and `action_url`.
+Submission confirms API acceptance, not phone delivery or reading. Missing/invalid
+configuration and provider failures return a clear 503. The default mock remains
+deterministic and network-free; tests never send real messages.
+
+#### Phone demo with Cloudflare Quick Tunnel
+
+For same-PC testing keep `TECHNICIAN_ACTION_BASE_URL=http://127.0.0.1:5173`.
+For real phone testing the base URL must be reachable from that phone. The recommended
+zero-cost demo option is [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
+With `cloudflared` already available (installation is not automated here), run:
+
+```sh
+cloudflared tunnel --url http://127.0.0.1:5173
+```
+
+It prints a temporary `https://....trycloudflare.com` URL. Set the backend
+`TECHNICIAN_ACTION_BASE_URL` to that exact URL, without a trailing technician path,
+and restart FastAPI. Start/restart Vite from `frontend/`, allowing only the actual
+hostname printed by the tunnel (replace the placeholder):
+
+```sh
+__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=your-generated-host.trycloudflare.com npm run dev
+```
+
+Vite stays bound to loopback; the tunnel forwards to it. Its existing `/api` and
+`/ws` proxies reach the same single FastAPI backend, so no public backend URL or
+CORS change is required. Click **Invia Telegram** again to generate a link using the
+new base URL, open it on your phone, and accept or refuse; the Control Center updates
+through WebSocket. Keep Vite, FastAPI and the tunnel running during the demo. A new
+tunnel URL requires updating the base URL/allowed hostname and sending a new link.
+Quick Tunnel is temporary development/demo access only, not production architecture.
+It exposes this unauthenticated demo application: use fictional demo data and stop
+the tunnel after testing. No tunnel URL is hardcoded in the repository.
 
 Links are bearer capabilities: anyone holding one can view that assignment and act
 while pending. Do not share them publicly or log them. Use HTTPS when serving beyond
@@ -380,7 +431,7 @@ Notification history records provider acceptance/simulation without the token,
 message body or credentials. Provider errors roll back local history and leave the
 assignment unchanged. External submission and database commit are not an atomic
 transaction: a timeout or commit failure can leave uncertain delivery. There is no
-automatic retry; inspect Twilio before explicitly resending to avoid duplicates.
+automatic retry; inspect the Telegram chat before explicitly resending to avoid duplicates.
 
 ### Realtime ODL updates
 
@@ -417,7 +468,7 @@ assignment attempts and is not CHIUSO/ANNULLATO. The backend forbids restarting
 an existing chain even when no PENDING attempt remains, so ACCEPTED shows the
 technician and status without a restart button.
 
-The current PENDING attempt shows technician name, PENDING, **Invia WhatsApp**,
+The current PENDING attempt shows technician name, PENDING, **Invia Telegram**,
 **Nessuna risposta**, and **Escala al caposquadra**. No-response advances to the
 next configured technician; escalation selects an untried team leader. The
 backend decides eligibility and returns a visible conflict if no candidate exists.
@@ -443,3 +494,11 @@ Successful local actions immediately refetch assignments, reminders, history
 and the ODL including `reminders_count`, and show inline feedback. Existing
 WebSocket refreshes remain active. Assignment notifications still refresh history
 and expose the existing technician link; sending remains an explicit action.
+
+### Binary reference audit
+
+`docs/design/SOLVO_Guida_Tecnica_MVP_v0.1 (2).pdf` remains an unchanged binary
+reference and requires manual regeneration of its superseded notification
+architecture. The explicit Telegram MVP decisions in these text documents take
+precedence. The tracked PNG is the visual reference, not a transport specification.
+No tracked DOCX documents are present.

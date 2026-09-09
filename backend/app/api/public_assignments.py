@@ -11,7 +11,7 @@ from app.schemas.public_assignment import NotificationResponse, PublicAssignment
 from app.services import assignments
 from app.services.assignment_links import ActionLinkConfigurationError, InvalidActionTokenError, validate_token
 from app.services.assignment_notifications import notify, public_details
-from app.services.whatsapp import NotificationUnavailableError
+from app.services.notifications import NotificationUnavailableError
 
 router = APIRouter(prefix='/api', tags=['technician-actions'])
 Configuration = Annotated[Settings, Depends(get_settings)]
