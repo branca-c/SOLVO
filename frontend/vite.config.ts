@@ -7,7 +7,13 @@ export default defineConfig(({ mode }) => {
   const proxy = { '/api': { target, changeOrigin: true }, '/ws': { target, changeOrigin: true, ws: true } }
   return {
     plugins: [react()],
-    server: { host: '127.0.0.1', port: 5173, strictPort: true, proxy },
+    server: {
+  host: '127.0.0.1',
+  port: 5173,
+  strictPort: true,
+  allowedHosts: ['.trycloudflare.com'],
+  proxy,
+},
     preview: { host: '127.0.0.1', port: 4173, strictPort: true, proxy },
   }
 })
