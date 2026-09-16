@@ -26,6 +26,7 @@ def test_domain_metadata_contains_expected_tables_and_foreign_keys() -> None:
         "assignments",
         "reminders",
         "work_order_history",
+        "work_order_notes",
     }
 
     assert set(Base.metadata.tables) == expected_tables
@@ -70,7 +71,7 @@ def test_models_form_expected_relationship_graph() -> None:
         attempt_number=1,
         rejection_notes=None,
     )
-    reminder = Reminder(work_order=work_order, creator=creator)
+    reminder = Reminder(work_order=work_order, creator=creator, text="Richiesta aggiornamenti")
     history = WorkOrderHistory(
         work_order=work_order,
         event_type="CREATED",

@@ -66,7 +66,7 @@ it.each(['no-response', 'escalation'])('advances pending via %s and displays its
 
 it('adds a reminder with the configured user and refreshes list, count and history', async () => {
   const add = vi.spyOn(api, 'addReminder').mockImplementation(async () => {
-    const reminder = { id: 22, work_order_id: 1, created_by: 42, created_at: order.created_at }
+    const reminder = { id: 22, work_order_id: 1, created_by: 42, text: 'Richiesta aggiornamenti', created_at: order.created_at }
     vi.mocked(api.reminders).mockResolvedValue([reminder])
     vi.mocked(api.get).mockResolvedValue({ ...order, reminders_count: 2 })
     return reminder
@@ -74,8 +74,13 @@ it('adds a reminder with the configured user and refreshes list, count and histo
   render(<WorkOrderDetail id={1} />)
   await screen.findByText('Nessun sollecito ricevuto.')
   await userEvent.click(screen.getByRole('button', { name: 'Aggiungi sollecito' }))
+  expect(add).not.toHaveBeenCalled()
+  const dialog = screen.getByRole('dialog', { name: 'Aggiungi sollecito' })
+  await userEvent.type(within(dialog).getByLabelText('Motivo / informazioni del sollecito'), 'Richiesta aggiornamenti')
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Aggiungi sollecito' }))
   await screen.findByText('Sollecito #22')
-  expect(add).toHaveBeenCalledWith(1, 42)
+  expect(screen.getByText('Richiesta aggiornamenti')).toBeTruthy()
+  expect(add).toHaveBeenCalledWith(1, 42, 'Richiesta aggiornamenti')
   expect(screen.getByText('Sollecito aggiunto.')).toBeTruthy()
   await waitFor(() => expect(screen.getByText('Solleciti', { selector: 'dt' }).nextElementSibling?.textContent).toBe('2'))
   expect(api.history).toHaveBeenCalledTimes(2)
@@ -123,10 +128,10 @@ it('uses existing POST contracts and serializes reminder attribution', async () 
     await api.startAssignment(5)
     await api.noResponse(12)
     await api.escalateTeamLeader(5)
-    await api.addReminder(5, 42)
+    await api.addReminder(5, 42, 'Richiesta aggiornamenti')
     expect(fetch).toHaveBeenNthCalledWith(1, '/api/work-orders/5/assignments/start', expect.objectContaining({ method: 'POST' }))
     expect(fetch).toHaveBeenNthCalledWith(2, '/api/assignments/12/no-response', expect.objectContaining({ method: 'POST' }))
     expect(fetch).toHaveBeenNthCalledWith(3, '/api/work-orders/5/assignments/escalate-team-leader', expect.objectContaining({ method: 'POST' }))
-    expect(fetch).toHaveBeenNthCalledWith(4, '/api/work-orders/5/reminders', expect.objectContaining({ method: 'POST', body: '{"created_by":42}' }))
+    expect(fetch).toHaveBeenNthCalledWith(4, '/api/work-orders/5/reminders', expect.objectContaining({ method: 'POST', body: '{"created_by":42,"text":"Richiesta aggiornamenti"}' }))
   } finally { vi.unstubAllGlobals() }
 })

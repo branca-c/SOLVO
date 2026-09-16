@@ -1,3 +1,4 @@
+import { WorkOrderActions } from './WorkOrderActions'
 import { CategoryName } from '../components/CategoryName'
 import type { WorkOrder } from '../types/workOrder'
 import { formatDate } from '../services/format'
@@ -5,13 +6,13 @@ import { navigate } from '../services/navigation'
 import { PriorityBadge, StatusBadge } from './Badge'
 import { Empty } from './Feedback'
 
-export function WorkOrderTable({ orders, full = false }: { orders: WorkOrder[]; full?: boolean }) {
+export function WorkOrderTable({ orders, full = false, onChanged }: { orders: WorkOrder[]; full?: boolean; onChanged: () => void }) {
   if (!orders.length) return <Empty title="Nessun ODL da mostrare" text="Crea un nuovo ordine di lavoro oppure modifica i filtri." />
   return <div className="table-container"><table className={full ? 'odl-table full-table' : 'odl-table'}>
     <caption className="sr-only">Ordini di lavoro dal più recente</caption>
-    <thead><tr><th scope="col">Codice</th><th scope="col">Data</th><th scope="col">Richiedente</th>{full && <th scope="col">Indirizzo</th>}<th scope="col">Categoria</th><th scope="col">Priorità</th><th scope="col">Stato</th>{full && <th scope="col">Solleciti</th>}</tr></thead>
+    <thead><tr><th scope="col">Codice</th><th scope="col">Data</th><th scope="col">Richiedente</th>{full && <th scope="col">Indirizzo</th>}<th scope="col">Categoria</th><th scope="col">Priorità</th><th scope="col">Stato</th><th scope="col">Solleciti</th><th scope="col">Azioni</th></tr></thead>
     <tbody>{orders.map(order => <tr key={order.id} onClick={event => {
-      if (!(event.target as HTMLElement).closest('a')) navigate(`/odl/${order.id}`)
+      if (!(event.target as HTMLElement).closest('a, button, input, select, textarea, .odl-actions')) navigate(`/odl/${order.id}`)
     }}>
       <td data-label="Codice"><a className="order-link" href={`#/odl/${order.id}`}>{order.code}</a></td>
       <td data-label="Data"><time dateTime={order.created_at}>{formatDate(order.created_at)}</time></td>
@@ -20,7 +21,7 @@ export function WorkOrderTable({ orders, full = false }: { orders: WorkOrder[]; 
       <td data-label="Categoria"><CategoryName id={order.category_id} /></td>
       <td data-label="Priorità"><PriorityBadge value={order.priority} /></td>
       <td data-label="Stato"><StatusBadge value={order.status} /></td>
-      {full && <td data-label="Solleciti"><span className="count">{order.reminders_count}</span></td>}
+      <td data-label="Solleciti"><span className="count">{order.reminders_count}</span></td><td data-label="Azioni"><WorkOrderActions order={order} onChanged={onChanged} /></td>
     </tr>)}</tbody>
   </table></div>
 }

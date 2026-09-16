@@ -56,6 +56,7 @@ Exit: requester-to-technician flow works locally on desktop and smartphone viewp
 
 ### Step 6 — Operator Control Center and real time
 
+- Delivered operator slice: ODL edit/delete, separate notes with atomic history/realtime, Dashboard/list quick reminders, and technician contact editing with routing fields read-only.
 - Build the reference-style sidebar, header/search, summary cards, recent/all ODL table, filters, detail/history, operator actions, and urgent people-risk call treatment.
 - Delivered: single-instance in-memory WebSocket updates after commit, Dashboard/detail refetch, and reconnect with backoff.
 
@@ -97,3 +98,5 @@ Exit: the same workflow runs in the reference cloud topology with documented tea
 - Production privacy controls: configurable retention, deletion workflows, consent/policy surfaces, encryption governance, and data minimization.
 - Expanded production observability with metrics, tracing, alerting, and audit export.
 
+
+- Production deletion evolution should consider archive/soft-delete and audit retention; the MVP physically deletes ODLs and dependent records.

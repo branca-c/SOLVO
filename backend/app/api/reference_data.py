@@ -1,12 +1,13 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models import Category, Technician
-from app.schemas.reference_data import CategoryResponse, TechnicianResponse
+from app.schemas.reference_data import CategoryResponse, TechnicianResponse, TechnicianUpdate
 
 router = APIRouter(prefix="/api", tags=["reference-data"])
 Database = Annotated[Session, Depends(get_db)]
@@ -36,3 +37,22 @@ def list_technicians(
         )
         for technician, name in db.execute(query)
     ]
+
+
+@router.patch("/technicians/{technician_id}", response_model=TechnicianResponse)
+def update_technician(technician_id: int, data: TechnicianUpdate, db: Database):
+    technician = db.get(Technician, technician_id)
+    if technician is None:
+        raise HTTPException(status_code=404, detail="Tecnico non trovato")
+    try:
+        for field, value in data.model_dump(exclude_unset=True).items():
+            setattr(technician, field, value)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise
+    db.refresh(technician)
+    return TechnicianResponse(id=technician.id, first_name=technician.first_name,
+        last_name=technician.last_name, phone=technician.phone, email=technician.email,
+        category_id=technician.category_id, category_name=technician.category.name,
+        escalation_order=technician.escalation_order, is_team_leader=technician.is_team_leader)

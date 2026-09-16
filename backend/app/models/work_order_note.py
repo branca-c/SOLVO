@@ -9,21 +9,19 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
-    from app.models.user import User
     from app.models.work_order import WorkOrder
 
 
-class Reminder(Base):
-    __tablename__ = "reminders"
+class WorkOrderNote(Base):
+    __tablename__ = "work_order_notes"
 
-    text: Mapped[str] = mapped_column(Text)
     id: Mapped[int] = mapped_column(primary_key=True)
     work_order_id: Mapped[int] = mapped_column(
         ForeignKey("work_orders.id", ondelete="CASCADE"), index=True
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-
-    work_order: Mapped[WorkOrder] = relationship(back_populates="reminders")
-    creator: Mapped[User] = relationship(back_populates="reminders")
-
+    text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    work_order: Mapped[WorkOrder] = relationship(back_populates="notes")

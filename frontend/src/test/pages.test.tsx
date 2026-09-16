@@ -18,7 +18,7 @@ beforeEach(() => {
   vi.spyOn(api, 'list').mockResolvedValue([order])
   vi.spyOn(api, 'get').mockResolvedValue(order)
   vi.spyOn(api, 'history').mockResolvedValue([{ id: 1, work_order_id: 1, event_type: 'CREATED', description: 'ODL creata: APERTO', created_at: order.created_at }])
-  vi.spyOn(api, 'reminders').mockResolvedValue([{ id: 1, work_order_id: 1, created_by: 4, created_at: order.created_at }])
+  vi.spyOn(api, 'reminders').mockResolvedValue([{ id: 1, work_order_id: 1, created_by: 4, text: 'Richiesta aggiornamenti', created_at: order.created_at }])
   vi.spyOn(api, 'assignments').mockResolvedValue([])
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })

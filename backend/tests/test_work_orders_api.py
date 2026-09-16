@@ -215,7 +215,7 @@ def test_invalid_enums(api):
 
 
 @pytest.mark.parametrize("method,suffix,body", [
-    ("post", "reminders", {"created_by": 1}),
+    ("post", "reminders", {"created_by": 1, "text": "Richiesta aggiornamenti"}),
     ("get", "reminders", None), ("get", "history", None),
 ])
 def test_missing_work_order_reminders_and_history(api, method, suffix, body):
@@ -234,7 +234,7 @@ def test_create_multiple_reminders_and_history(api):
     assert len(history.json()) == 1
     assert history.json()[0]["event_type"] == "CREATED"
     for count in range(1, 4):
-        response = client.post(f"{url}/reminders", json={"created_by": 1})
+        response = client.post(f"{url}/reminders", json={"created_by": 1, "text": "Richiesta aggiornamenti"})
         assert response.status_code == 201
         reminder = response.json()
         assert reminder["work_order_id"] == original["id"]
@@ -262,7 +262,7 @@ def test_invalid_reminder_creator_and_server_fields(api, body):
     original = create(client)
     url = f"{URL}/{original['id']}"
     history = client.get(f"{url}/history").json()
-    assert client.post(f"{url}/reminders", json=body).status_code == 422
+    assert client.post(f"{url}/reminders", json={**body, "text": "Richiesta aggiornamenti"}).status_code == 422
     assert client.get(url).json() == original
     assert client.get(f"{url}/reminders").json() == []
     assert client.get(f"{url}/history").json() == history
@@ -274,7 +274,7 @@ def test_reminders_and_history_ordering_and_work_order_scope(api):
     url = f"{URL}/{first['id']}"
     for work_order in (first, second, first, first):
         assert client.post(
-            f"{URL}/{work_order['id']}/reminders", json={"created_by": 1}
+            f"{URL}/{work_order['id']}/reminders", json={"created_by": 1, "text": "Richiesta aggiornamenti"}
         ).status_code == 201
     with Session(engine) as db:
         reminders = db.scalars(select(Reminder).where(
@@ -312,7 +312,7 @@ def test_history_failure_rolls_back_entire_mutation(api, operation):
             work_order = db.get(WorkOrder, original["id"])
             with pytest.raises(SQLAlchemyError, match="Simulated history"):
                 if operation == "reminder":
-                    work_orders.create_reminder(db, work_order, 1)
+                    work_orders.create_reminder(db, work_order, 1, "Richiesta aggiornamenti")
                 else:
                     work_orders.change_status(db, work_order, WorkOrderStatus.IN_CORSO)
             assert db.is_active
@@ -333,10 +333,10 @@ def test_reminder_increment_uses_database_counter_not_stale_object(api):
         stale_order = stale_db.get(WorkOrder, original["id"])
         stale_db.commit()
         assert client.post(
-            f"{URL}/{original['id']}/reminders", json={"created_by": 1}
+            f"{URL}/{original['id']}/reminders", json={"created_by": 1, "text": "Richiesta aggiornamenti"}
         ).status_code == 201
         assert stale_order.reminders_count == 0
-        work_orders.create_reminder(stale_db, stale_order, 1)
+        work_orders.create_reminder(stale_db, stale_order, 1, "Richiesta aggiornamenti")
     assert client.get(f"{URL}/{original['id']}").json()["reminders_count"] == 2
 
 

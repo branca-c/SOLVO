@@ -68,7 +68,7 @@ def test_work_order_events_noops_and_reminder(api, published):
     assert client.patch(path, json={'description': 'Aggiornato'}).status_code == 200
     assert client.patch(path + '/status', json={'status': 'APERTO'}).status_code == 200
     assert client.patch(path + '/status', json={'status': 'IN_CORSO'}).status_code == 200
-    assert client.post(path + '/reminders', json={'created_by': 1}).status_code == 201
+    assert client.post(path + '/reminders', json={'created_by': 1, 'text': 'Richiesta aggiornamenti'}).status_code == 201
     assert client.delete(path).status_code == 204
     assert [item['type'] for item in published] == ['work_order.created', 'work_order.updated', 'work_order.status_changed', 'reminder.created', 'work_order.deleted']
     assert all(item['work_order_id'] == order['id'] for item in published)

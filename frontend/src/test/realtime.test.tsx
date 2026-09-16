@@ -61,6 +61,7 @@ it('dashboard refetches on events and connection establishment', async () => {
 })
 
 it('detail only refetches matching ODL and refreshes every activity section', async () => {
+  const notes = vi.spyOn(api, 'notes').mockResolvedValue([])
   const get = vi.spyOn(api, 'get').mockResolvedValue(order)
   const reminders = vi.spyOn(api, 'reminders').mockResolvedValue([])
   const history = vi.spyOn(api, 'history').mockResolvedValue([])
@@ -76,5 +77,6 @@ it('detail only refetches matching ODL and refreshes every activity section', as
     expect(reminders).toHaveBeenCalledTimes(2)
     expect(history).toHaveBeenCalledTimes(2)
     expect(assignments).toHaveBeenCalledTimes(2)
+    expect(notes).toHaveBeenCalledTimes(2)
   })
 })

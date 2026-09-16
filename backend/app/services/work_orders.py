@@ -6,7 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.domain.work_order_status import InvalidTransitionError, validate_transition
-from app.models import Category, Priority, Reminder, User, WorkOrder, WorkOrderHistory, WorkOrderStatus
+from app.models import WorkOrderNote, Category, Priority, Reminder, User, WorkOrder, WorkOrderHistory, WorkOrderStatus
 from app.services.realtime import publish
 from app.schemas.work_order import WorkOrderCreate, WorkOrderUpdate
 
@@ -97,11 +97,11 @@ class InvalidReminderCreatorError(Exception):
     pass
 
 
-def create_reminder(db: Session, work_order: WorkOrder, created_by: int) -> Reminder:
+def create_reminder(db: Session, work_order: WorkOrder, created_by: int, text: str) -> Reminder:
     if db.get(User, created_by) is None:
         raise InvalidReminderCreatorError("Utente del sollecito non trovato")
     order_id = work_order.id
-    reminder = Reminder(work_order_id=order_id, created_by=created_by)
+    reminder = Reminder(work_order_id=order_id, created_by=created_by, text=text)
     try:
         # Increment in SQL, never from a potentially stale in-memory counter.
         db.execute(
@@ -146,3 +146,25 @@ def delete(db: Session, work_order: WorkOrder) -> None:
     db.delete(work_order)
     db.commit()
     publish('work_order.deleted', order_id)
+
+
+def create_note(db: Session, work_order: WorkOrder, text: str) -> WorkOrderNote:
+    order_id = work_order.id
+    note = WorkOrderNote(work_order_id=order_id, text=text, created_by=None)
+    try:
+        db.add(note)
+        db.flush()
+        db.add(WorkOrderHistory(work_order_id=order_id, event_type="NOTE_ADDED",
+                                description=f"Nota #{note.id} aggiunta"))
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise
+    publish('work_order.updated', order_id)
+    db.refresh(note)
+    return note
+
+
+def list_notes(db: Session, work_order: WorkOrder) -> list[WorkOrderNote]:
+    return list(db.scalars(select(WorkOrderNote).where(WorkOrderNote.work_order_id == work_order.id)
+                           .order_by(WorkOrderNote.created_at.desc(), WorkOrderNote.id.desc())))

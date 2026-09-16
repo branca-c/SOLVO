@@ -271,3 +271,14 @@ dd { margin: 0; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
 
 .operator-actions { border: 0; padding: 0; margin: 12px 0 0; min-width: 0; }
 .operator-actions .heading-actions { flex-wrap: wrap; margin-top: 8px; }
+
+.operator-overlay { position: fixed; inset: 0; z-index: 100; background: rgb(24 32 51 / 35%); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.operator-dialog { width: min(720px, 100%); max-height: 90vh; overflow: auto; padding: 24px; text-align: left; }
+.odl-actions .heading-actions { flex-wrap: wrap; gap: 4px; }
+.odl-actions .button { padding: 8px; min-height: 44px; white-space: nowrap; }
+.odl-actions small { display: block; color: var(--muted); }
+.operator-dialog fieldset { border: 0; padding: 0; margin: 0; }
+.operator-dialog .heading-actions { margin-top: 16px; }
+
+.notes-separator { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
+.reminder-action small { display: block; color: var(--muted); }

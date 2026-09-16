@@ -1,3 +1,5 @@
+from app.schemas.work_order_note import WorkOrderNoteCreate, WorkOrderNoteResponse
+from app.models import WorkOrderNote
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -87,7 +89,7 @@ def create_reminder(
     data: ReminderCreate, work_order: ExistingWorkOrder, db: Database
 ) -> Reminder:
     try:
-        return work_orders.create_reminder(db, work_order, data.created_by)
+        return work_orders.create_reminder(db, work_order, data.created_by, data.text)
     except work_orders.InvalidReminderCreatorError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -100,3 +102,13 @@ def list_reminders(work_order: ExistingWorkOrder, db: Database) -> list[Reminder
 @router.get("/{work_order_id}/history", response_model=list[WorkOrderHistoryResponse])
 def list_history(work_order: ExistingWorkOrder, db: Database) -> list[WorkOrderHistory]:
     return work_orders.list_history(db, work_order)
+
+
+@router.post("/{work_order_id}/notes", response_model=WorkOrderNoteResponse, status_code=201)
+def create_note(data: WorkOrderNoteCreate, work_order: ExistingWorkOrder, db: Database) -> WorkOrderNote:
+    return work_orders.create_note(db, work_order, data.text)
+
+
+@router.get("/{work_order_id}/notes", response_model=list[WorkOrderNoteResponse])
+def list_notes(work_order: ExistingWorkOrder, db: Database) -> list[WorkOrderNote]:
+    return work_orders.list_notes(db, work_order)

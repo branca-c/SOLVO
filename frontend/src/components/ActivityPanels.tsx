@@ -1,3 +1,4 @@
+import { ReminderAction } from './ReminderAction'
 import { CategoryName } from './CategoryName'
 import { NotifyAssignment } from './NotifyAssignment'
 import { useCallback, useRef, useState } from 'react'
@@ -9,6 +10,7 @@ import { ErrorMessage, Loading } from './Feedback'
 
 const eventLabels: Record<string, string> = {
   ASSIGNMENT_NOTIFICATION_SENT: 'Notifica assegnazione',
+  NOTE_ADDED: 'Nota aggiunta',
   CREATED: 'ODL creato', STATUS_CHANGED: 'Stato aggiornato', REMINDER_CREATED: 'Sollecito ricevuto',
   ASSIGNMENT_STARTED: 'Assegnazione avviata', ASSIGNMENT_ACCEPTED: 'Assegnazione accettata',
   ASSIGNMENT_REJECTED: 'Assegnazione rifiutata', ASSIGNMENT_NO_RESPONSE: 'Nessuna risposta', ASSIGNMENT_ESCALATED: 'Escalation al caposquadra',
@@ -17,12 +19,10 @@ export function ActivityPanels({ id, status, onChanged, refreshVersion = 0 }: {
   id: number; status: WorkOrderStatus; onChanged: () => void; refreshVersion?: number
 }) {
   const terminal = status === 'CHIUSO' || status === 'ANNULLATO'
-  const demoValue = String(import.meta.env.VITE_DEMO_USER_ID ?? '').trim()
-  const demoUserId = /^[1-9]\d*$/.test(demoValue) && Number.isSafeInteger(Number(demoValue)) ? Number(demoValue) : undefined
   const [busy, setBusy] = useState(false)
   const lock = useRef(false)
-  const [feedback, setFeedback] = useState<{ section: 'assignment' | 'reminder'; message?: string; error?: string }>()
-  async function act(section: 'assignment' | 'reminder', action: () => Promise<unknown>, message: string) {
+  const [feedback, setFeedback] = useState<{ section: 'assignment'; message?: string; error?: string }>()
+  async function act(section: 'assignment', action: () => Promise<unknown>, message: string) {
     if (lock.current) return
     lock.current = true
     setBusy(true); setFeedback(undefined)
@@ -56,10 +56,8 @@ export function ActivityPanels({ id, status, onChanged, refreshVersion = 0 }: {
         </fieldset>}{item.rejection_notes && <p className="record-notes">{item.rejection_notes}</p>}</li>)}</ol>}
       </section>
       <section className="surface" aria-labelledby="reminders-heading"><div className="section-heading"><h2 id="reminders-heading">Solleciti</h2><span className="count">{reminders.data?.length ?? '—'}</span></div>
-        <div className="section-heading"><button type="button" className="button button-primary" disabled={busy || reminders.loading || !demoUserId} onClick={() => demoUserId && act('reminder', () => api.addReminder(id, demoUserId), 'Sollecito aggiunto.')}>Aggiungi sollecito</button></div>
-        {!demoUserId && <p className="section-empty">Solleciti non disponibili: utente demo non configurato.</p>}
-        {feedback?.section === 'reminder' && <>{feedback.error ? <ErrorMessage message={feedback.error} /> : <p className="notice notice-success" role="status">{feedback.message}</p>}</>}
-        {reminders.loading && !reminders.data ? <Loading text="Caricamento solleciti…" /> : reminders.error ? <ErrorMessage message={reminders.error} retry={reminders.reload} /> : !reminders.data?.length ? <p className="section-empty">Nessun sollecito ricevuto.</p> : <ol className="record-list">{reminders.data.map(item => <li key={item.id}><strong>Sollecito #{item.id}</strong><p>Inserito da utente #{item.created_by}</p><time dateTime={item.created_at}>{formatDate(item.created_at, true)}</time></li>)}</ol>}
+        <ReminderAction id={id} disabled={busy || reminders.loading} onBusy={setBusy} onChanged={onChanged} />
+        {reminders.loading && !reminders.data ? <Loading text="Caricamento solleciti…" /> : reminders.error ? <ErrorMessage message={reminders.error} retry={reminders.reload} /> : !reminders.data?.length ? <p className="section-empty">Nessun sollecito ricevuto.</p> : <ol className="record-list">{reminders.data.map(item => <li key={item.id}><p className="record-notes"><strong>{item.text}</strong></p><span>Sollecito #{item.id}</span><p>Inserito da utente #{item.created_by}</p><time dateTime={item.created_at}>{formatDate(item.created_at, true)}</time></li>)}</ol>}
       </section>
     </div>
   </div>

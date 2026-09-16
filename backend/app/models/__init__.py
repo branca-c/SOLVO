@@ -1,3 +1,4 @@
+from app.models.work_order_note import WorkOrderNote
 from app.models.assignment import Assignment
 from app.models.category import Category
 from app.models.enums import AssignmentStatus, Priority, UserRole, WorkOrderStatus
@@ -17,6 +18,7 @@ __all__ = [
     "User",
     "UserRole",
     "WorkOrder",
+    "WorkOrderNote",
     "WorkOrderHistory",
     "WorkOrderStatus",
 ]

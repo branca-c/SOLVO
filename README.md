@@ -128,7 +128,8 @@ uniqueness. Status starts at `APERTO`, the reminder counter starts at zero, and
 timestamps are server-managed. Creation and actual status changes record history
 atomically.
 
-Reminder creation requires JSON `{"created_by": 1}` identifying an existing user.
+Reminder creation requires JSON `{"created_by": 1, "text": "Richiesta aggiornamenti dopo il sopralluogo"}` identifying an existing user.
+Text is required, trimmed, and limited to 1–2000 characters; blank text returns 422.
 The existing model requires a non-null user foreign key; this is caller-supplied
 attribution, not authentication. Missing/null/unknown users return 422. The server
 creates the timestamp, increments `reminders_count` in SQL, and appends a
@@ -239,7 +240,7 @@ Urgenti comprende tutti gli stati; Evasi/Chiusi somma EVASO e CHIUSO.
 La lista filtra per stato e priorità sul server. Dashboard, lista e dettaglio
 mostrano i nomi categoria tramite un lookup condiviso. Il form manuale/AI/audio
 carica un select da `/api/categories` e invia il relativo `category_id`.
-La pagina Tecnici mostra categoria, ordine escalation, ruolo e telefono senza CRUD. Il dettaglio mostra ODL, solleciti,
+La pagina Tecnici mostra i dati di instradamento e permette di modificare i contatti. Il dettaglio mostra ODL, solleciti,
 history e assegnazioni, con errori e ricaricamento indipendenti delle sezioni.
 Il form crea un ODL e apre il suo dettaglio con conferma inline. Le azioni di
 stato propongono solo le transizioni consentite; il backend resta autorevole e
@@ -502,3 +503,76 @@ reference and requires manual regeneration of its superseded notification
 architecture. The explicit Telegram MVP decisions in these text documents take
 precedence. The tracked PNG is the visual reference, not a transport specification.
 No tracked DOCX documents are present.
+
+
+## Operator management slice
+
+Dashboard, ODL list and detail expose Dettaglio, Modifica ODL and Elimina.
+Editing reuses PATCH /api/work-orders/{id} for requester names, phone/email,
+fault address, category, priority and description. Status uses its existing
+workflow; code, IDs, timestamps and reminder counter are not editable.
+Deletion reuses DELETE, requires confirmation showing the ODL code, refreshes
+current data and returns from detail to the ODL list. Physical deletion with
+cascading dependent notes/history is the current MVP behavior.
+
+WorkOrderNote stores id, work_order_id, text, server timestamp created_at and
+nullable created_by (null in the no-auth MVP). Alembic revision 20260916_0002
+adds work_order_notes and the cascading WorkOrder relationship.
+POST /api/work-orders/{id}/notes accepts only nonempty trimmed text; note and
+NOTE_ADDED history commit atomically and roll back together on storage failure.
+GET /api/work-orders/{id}/notes orders created_at DESC, id DESC. Both return 404
+for missing ODLs. Description is preserved. Detail offers Note, Aggiungi nota
+and dated entries. Post-commit work_order.updated reuses existing realtime
+invalidation so open detail and history refresh.
+
+Dashboard/list show reminder counts and a quick Sollecito action using the
+existing POST and VITE_DEMO_USER_ID attribution (a positive safe integer with
+no default, not authentication). Missing/invalid configuration disables the
+action with an explanation. Successful writes refresh counts immediately;
+existing reminder history and WebSocket behavior remain. The ODL list now also
+subscribes to the existing realtime hook.
+
+PATCH /api/technicians/{technician_id} accepts only first_name, last_name, phone
+and nullable email. Blank required names/phone, null required fields, and extra
+fields return 422; missing technician returns 404. Tecnici provides contact
+editing and feedback with immediate refresh. Category, escalation order and
+team-leader role remain read-only configuration; routing rules are unchanged.
+**Technician phone is editable real contact data, but the CURRENT Telegram demo
+transport uses TELEGRAM_DEMO_CHAT_ID, not the technician phone number.**
+No authentication, provider changes or new notification channels are included.
+
+For production archive/soft-delete and audit-retention considerations, see the future deletion evolution in `docs/ROADMAP.md`. Run `alembic upgrade head` before using notes. The PDF guide is unchanged pending application validation.
+
+
+## Textual solleciti and notes presentation
+
+A sollecito is a timestamped textual follow-up/request, not merely a counter.
+The existing reminder POST now requires `created_by` and `text`; Pydantic trims
+outer whitespace, rejects missing/empty/whitespace-only text and enforces a
+2000-character maximum. GET returns the text with the original reminder fields,
+ordered created_at DESC, id DESC. User verification and missing-ODL 404 remain.
+Reminder insertion, atomic SQL counter increment and REMINDER_CREATED history
+still commit together and roll back together. History records the reminder ID
+and creator concisely without duplicating the message. The existing post-commit
+reminder.created WebSocket event remains unchanged.
+
+Alembic revision `20260916_0003` (after `20260916_0002`) adds a nullable text
+column, fills existing rows with **Sollecito precedente: testo non disponibile.**,
+then enforces NOT NULL with no default for new rows. This neutral legacy label
+indicates missing historical content and does not invent a reason. Existing IDs,
+creator, timestamps and counters are preserved. Downgrade removes the text column
+and its content while preserving reminder rows. Run `alembic upgrade head` before
+starting the updated application; previous migration files are unchanged.
+
+Dashboard/list Sollecito and detail Aggiungi sollecito share one compact dialog:
+Aggiungi sollecito, Motivo / informazioni del sollecito textarea, Annulla and
+Aggiungi sollecito. Opening/cancelling never creates a reminder. Explicit submission
+sends the reviewed text with VITE_DEMO_USER_ID; success closes the dialog, displays
+inline confirmation and immediately refetches counts/data/history. Errors preserve
+the message for correction. Missing/invalid demo identity disables creation.
+Detail displays text prominently, creator ID and date/time, newest first.
+
+The Note section now shows existing notes first, or Nessuna nota presente,
+followed by spacing/separator, Aggiungi nota heading, textarea and button.
+This changes presentation only; WorkOrderNote backend behavior is unchanged.
+PDF regeneration remains deferred.

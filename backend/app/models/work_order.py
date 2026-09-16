@@ -10,6 +10,7 @@ from app.db.base import Base
 from app.models.enums import Priority, WorkOrderStatus
 
 if TYPE_CHECKING:
+    from app.models.work_order_note import WorkOrderNote
     from app.models.assignment import Assignment
     from app.models.category import Category
     from app.models.reminder import Reminder
@@ -58,3 +59,5 @@ class WorkOrder(Base):
         back_populates="work_order", cascade="all, delete-orphan"
     )
 
+
+    notes: Mapped[list[WorkOrderNote]] = relationship(back_populates="work_order", cascade="all, delete-orphan")

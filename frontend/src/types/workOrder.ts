@@ -21,6 +21,7 @@ export interface WorkOrder extends WorkOrderInput {
   reminders_count: number
 }
 export interface Reminder {
+  text: string
   id: number
   work_order_id: number
   created_at: string
@@ -107,3 +108,5 @@ export interface NotificationResult {
   status: string
   action_url: string
 }
+
+export interface WorkOrderNote { id: number; work_order_id: number; text: string; created_at: string; created_by: number | null }

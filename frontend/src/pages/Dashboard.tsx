@@ -24,7 +24,7 @@ export function Dashboard() {
     <RealtimeStatus status={realtime} />
     <div className="summary-grid">{cards.map(card => <section className="summary-card" key={card.label} aria-label={card.label}><div className={`metric-icon ${card.color}`}><Icon name={card.icon} /></div><div><h2>{card.label}</h2><strong className="metric-value">{card.value ?? '—'}</strong></div><p>{card.note}</p></section>)}</div>
     <section className="surface"><div className="section-heading"><div><h2>ODL recenti</h2><p>Gli ultimi ordini di lavoro inseriti</p></div><a className="text-link" href="#/odl">Tutti gli ODL <Icon name="arrow" /></a></div>
-      {resource.loading ? <Loading /> : resource.error ? <ErrorMessage message={resource.error} retry={resource.reload} /> : <WorkOrderTable orders={newestFirst(resource.data ?? []).slice(0, 8)} />}
+      {resource.loading && !resource.data ? <Loading /> : resource.error ? <ErrorMessage message={resource.error} retry={resource.reload} /> : <WorkOrderTable onChanged={resource.reload} orders={newestFirst(resource.data ?? []).slice(0, 8)} />}
       <div className="table-footer"><span>Fino a 8 ordini · Dal più recente</span><span>Aggiornamento automatico quando connesso</span></div>
     </section>
   </>

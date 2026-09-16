@@ -48,7 +48,7 @@ def test_demo_seed_and_technician_api(api):
         'fault_address': 'Demo', 'category_id': 1, 'priority': 'MEDIA', 'description': 'Demo',
     })
     assert created.status_code == 201
-    assert client.post(f"/api/work-orders/{created.json()['id']}/reminders", json={'created_by': user_id}).status_code == 201
+    assert client.post(f"/api/work-orders/{created.json()['id']}/reminders", json={'created_by': user_id, 'text': 'Richiesta aggiornamenti'}).status_code == 201
 
 
 def test_seed_conflict_rolls_back_without_overwriting(api):

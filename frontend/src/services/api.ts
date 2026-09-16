@@ -34,6 +34,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     if (error instanceof Error && error.name === 'AbortError') throw error
     throw new ApiError('Connessione non riuscita. Verifica che il servizio sia raggiungibile e riprova.', 0)
   }
+  if (response.ok && response.status === 204) return undefined as T
   const body: unknown = await response.json().catch(() => null)
   if (!response.ok) {
     throw new ApiError(errorDetail(body) || (response.status === 404
@@ -46,10 +47,15 @@ export function messageFor(error: unknown): string {
   return error instanceof Error ? error.message : 'Si è verificato un errore. Riprova.'
 }
 export const api = {
+  update: (id: number, data: WorkOrderInput) => request<WorkOrder>(`/work-orders/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (id: number) => request<void>(`/work-orders/${id}`, { method: 'DELETE' }),
+  notes: (id: number, signal?: AbortSignal) => request<import('../types/workOrder').WorkOrderNote[]>(`/work-orders/${id}/notes`, { signal }),
+  addNote: (id: number, text: string) => request<import('../types/workOrder').WorkOrderNote>(`/work-orders/${id}/notes`, { method: 'POST', body: JSON.stringify({ text }) }),
+  updateTechnician: (id: number, data: Pick<Technician, 'first_name' | 'last_name' | 'phone' | 'email'>) => request<Technician>(`/technicians/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   startAssignment: (id: number) => request<Assignment>(`/work-orders/${id}/assignments/start`, { method: 'POST' }),
   noResponse: (id: number) => request<Assignment>(`/assignments/${id}/no-response`, { method: 'POST' }),
   escalateTeamLeader: (id: number) => request<Assignment>(`/work-orders/${id}/assignments/escalate-team-leader`, { method: 'POST' }),
-  addReminder: (id: number, createdBy: number) => request<Reminder>(`/work-orders/${id}/reminders`, { method: 'POST', body: JSON.stringify({ created_by: createdBy }) }),
+  addReminder: (id: number, createdBy: number, text: string) => request<Reminder>(`/work-orders/${id}/reminders`, { method: 'POST', body: JSON.stringify({ created_by: createdBy, text }) }),
   categories: () => request<Category[]>('/categories'),
   technicians: (categoryId?: number, signal?: AbortSignal) => request<Technician[]>(`/technicians${categoryId === undefined ? '' : `?category_id=${categoryId}`}`, { signal }),
   publicAssignment: (token: string, signal?: AbortSignal) => request<PublicAssignment>(`/public/assignments/${encodeURIComponent(token)}`, { signal, cache: 'no-store' }),

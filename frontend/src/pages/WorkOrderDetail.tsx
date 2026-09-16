@@ -1,3 +1,5 @@
+import { WorkOrderActions } from '../components/WorkOrderActions'
+import { WorkOrderNotes } from '../components/WorkOrderNotes'
 import { CategoryName } from '../components/CategoryName'
 import { useRealtime } from '../hooks/useRealtime'
 import { RealtimeStatus } from '../components/RealtimeStatus'
@@ -28,6 +30,8 @@ export function WorkOrderDetail({ id, created = false }: { id: number; created?:
         <dl className="detail-grid"><div><dt>Richiedente</dt><dd>{order.user_first_name} {order.user_last_name}</dd></div><div><dt>Telefono</dt><dd><a href={`tel:${order.user_phone}`}>{order.user_phone}</a></dd></div>{order.user_email && <div><dt>Email</dt><dd><a href={`mailto:${order.user_email}`}>{order.user_email}</a></dd></div>}<div><dt>Indirizzo del guasto</dt><dd>{order.fault_address}</dd></div><div><dt>Categoria</dt><dd><CategoryName id={order.category_id} /></dd></div><div><dt>Solleciti</dt><dd>{order.reminders_count}</dd></div><div><dt>Creato il</dt><dd><time dateTime={order.created_at}>{formatDate(order.created_at, true)}</time></dd></div><div><dt>Ultimo aggiornamento</dt><dd><time dateTime={order.updated_at}>{formatDate(order.updated_at, true)}</time></dd></div></dl>
         <div className="description"><h3>Descrizione del guasto</h3><p>{order.description}</p></div>
       </section>
+      <WorkOrderActions detail order={order} onChanged={refresh} />
+      <WorkOrderNotes key={`notes-${id}`} id={id} refreshVersion={activityVersion} onChanged={refresh} />
       <StatusActions key={`${order.id}-${order.status}`} order={order} onChanged={text => { setMessage(text); refresh() }} />
       <ActivityPanels key={id} id={id} status={order.status} onChanged={refresh} refreshVersion={activityVersion} />
     </>}
