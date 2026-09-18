@@ -20,7 +20,11 @@ router = APIRouter(prefix="/api/ai", tags=["ai"])
 
 def get_ai_provider(settings: Annotated[Settings, Depends(get_settings)]) -> AIProvider:
     try:
-        return create_provider(settings.ai_provider)
+        return create_provider(
+            settings.ai_provider, base_url=settings.ollama_base_url,
+            model=settings.ollama_model, timeout=settings.ollama_timeout_seconds,
+            keep_alive=settings.ollama_keep_alive,
+        )
     except AIProviderUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -44,7 +48,9 @@ def get_transcription_provider(
 ) -> TranscriptionProvider:
     try:
         return create_transcription_provider(
-            settings.transcription_provider, settings.transcription_mock_text
+            settings.transcription_provider, settings.transcription_mock_text,
+            model_size=settings.whisper_model_size, device=settings.whisper_device,
+            compute_type=settings.whisper_compute_type, language=settings.whisper_language,
         )
     except TranscriptionUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

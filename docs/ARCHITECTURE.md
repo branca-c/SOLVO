@@ -265,11 +265,11 @@ key page flows and helpers; `tsc --noEmit` and `vite build` are quality gates.
 
 `POST /api/ai/work-order-draft` accepts only text (trimmed, 1–10000 characters).
 The thin route obtains the SQLAlchemy dependency and selected provider, then
-calls `work_order_drafts.build_draft`. The provider protocol receives text only:
+calls `work_order_drafts.build_draft`. The provider protocol receives text and configured category names only:
 it has no database session, repository, workflow commands, or creation method.
 Its return value is untrusted and validated against `ExtractedWorkOrder`, which
 forbids extra fields, workflow fields and provider-supplied database IDs. The
-response uses `WorkOrderDraft` with a required description fallback and warnings.
+response uses `WorkOrderDraft` with an editable description (empty when missing) and warnings.
 Names, phone, email and address absent from the source are discarded even if a
 provider proposes them. Category names resolve by case/whitespace-normalized
 exact matching against configured Category rows; missing or ambiguous matches
@@ -277,8 +277,9 @@ return null IDs and warnings. The service only SELECTs categories: there is no
 commit, persistence side effect, or WorkOrder creation dependency.
 
 `AI_PROVIDER=mock` selects deterministic keyword/explicit-field extraction;
-`fake` remains a compatibility alias for the previous environment example. Other
-values produce a recoverable 503. No AWS client, credentials, network inference,
+`fake` remains a compatibility alias for the previous environment example.
+`ollama` selects the local HTTP adapter described below. Other values produce a
+recoverable 503. No AWS client, credentials, cloud inference,
 agent or tool-calling mechanism is introduced. The interface is the extension
 point for the Bedrock target recorded in Roadmap Step 8; it is not implemented.
 Invalid provider output returns 502 and provider failures return sanitized 503
@@ -304,7 +305,7 @@ closes its spooled upload in a finally block on success and failure. No audio as
 row, permanent file, queue, or object storage is created. Multipart parsing may spool
 the incoming upload before application size validation; the service reads at most
 its configured limit plus one byte. MIME validation is not codec validation in mock mode.
-Only the deterministic mock adapter is delivered. Unsupported provider configuration
+Deterministic mock and real local faster-whisper adapters are delivered. Unsupported provider configuration
 fails explicitly (503); it never silently switches providers.
 The React audio component releases microphone tracks on stop/error/unmount and aborts
 pending analysis on unmount. JSON and multipart requests share the API client;
@@ -500,3 +501,126 @@ The Note section now shows existing notes first, or Nessuna nota presente,
 followed by spacing/separator, Aggiungi nota heading, textarea and button.
 This changes presentation only; WorkOrderNote backend behavior is unchanged.
 PDF regeneration remains deferred.
+
+
+## Local speech recognition adapter
+
+LocalWhisperTranscriptionProvider implements the existing audio-bytes transcription
+port without database access. Lazy imports isolate optional runtime initialization
+from mock use. The provider factory caches local adapters by model/device/compute/
+language (bounded to four configurations); each owns a lazy model and a lock serializing
+first load and inference. Factory construction is also locked to avoid duplicate
+adapters on concurrent first requests. One stable application configuration reuses
+one model per backend process. Restart releases that cache; workers each own a model.
+
+PyAV decode_audio receives BytesIO of the actual upload and resamples to 16 kHz.
+The stream closes even on decoder failure; the adapter writes no temporary file.
+FastAPI’s existing multipart spool remains closed by the route. Segment generators
+are consumed inside the model lock; nonblank segments are joined with spaces and
+trimmed. VAD filters nonspeech. No recognized text produces a readable 422.
+
+Auto device selection probes CTranslate2 CUDA availability defensively. GPU model
+initialization or deferred inference failure retries with CPU/int8 and retains the
+CPU model for later requests. Explicit CPU/CUDA remains configurable. Failed model
+initialization is not cached as a successful model and can be retried. Dependency,
+model and runtime failures expose fixed messages (503), without raw exception data.
+Unreadable audio is 422. No CUDA path or external transcription API is hardcoded.
+The first model load can download/cache weights using faster-whisper; provisioned
+local model directories support fully offline initialization.
+
+Audio orchestration still reuses build_draft and category resolution with no writes.
+Additive nullable transcription_source metadata distinguishes mock/local_whisper;
+the browser keeps MediaRecorder unchanged and displays the corresponding source.
+Tests replace faster-whisper/CTranslate2 modules with stubs and never download models.
+The sole new direct dependency is faster-whisper (including its decoding/inference
+runtime dependencies). Amazon Transcribe remains unimplemented; PDF is unchanged.
+
+
+## Local Ollama extraction adapter
+
+AIProvider.extract(text, categories) receives only source text and names from the
+current Category query. build_draft uses the same rows for normalized exact name
+resolution; the provider never receives a database session or category IDs.
+Both text and audio orchestration call build_draft. Whisper is speech recognition,
+Ollama is semantic extraction/summarization; neither creates WorkOrders.
+
+AI_PROVIDER=mock retains deterministic network-free test/demo behavior (fake alias).
+AI_PROVIDER=ollama uses OllamaAIProvider with existing HTTPX, synchronous `/api/chat`,
+stream=false, temperature=0 and ExtractedWorkOrder.model_json_schema() as format.
+Category choices are constrained to supplied names (only null for an empty list).
+Pydantic validates message.content as ExtractedWorkOrder before the application
+validates it again. Extra fields, IDs, workflow commands and invalid priorities
+are forbidden by the existing schema; no duplicate extraction schema is introduced.
+
+OLLAMA_BASE_URL defaults to http://127.0.0.1:11434; OLLAMA_MODEL has no default model
+and is required for ollama; OLLAMA_TIMEOUT_SECONDS defaults to 60 and must be positive
+and finite. Configuration is validated at provider construction so manual intake
+and mock remain usable with no Ollama model. No model pull, SDK, retries or silent
+provider substitution. HTTP proxy environment settings are ignored for the local adapter.
+Missing model configuration, connectivity, 404 model availability, timeout and other
+HTTP failures map to sanitized 503; malformed envelope/JSON/Pydantic output maps to
+502 on both endpoints. Raw model responses and exception details are not returned.
+
+A focused Italian system prompt treats user text as data, requests null for missing
+or uncertain fields, gives priority semantics and requires technical summaries only.
+An exact-value boundary check rejects Ollama summaries repeating extracted names,
+phone, email or address; it does not rewrite language and cannot detect every
+paraphrase. Existing source grounding excludes invented contact/address proposals,
+allowing punctuation/spacing normalization. Missing description becomes an empty
+form field with a warning rather than a copied transcript. Creation schemas still
+require a nonempty description. Mock keeps its source-text description for compatibility.
+
+HTTP MockTransport tests exercise parsing, provider selection/configuration, errors,
+field mapping, categories, priorities and equal text/audio requests; SQL observation
+verifies SELECT-only analysis. Human editing and explicit confirmation use the
+unchanged creation endpoint. Amazon Bedrock is a future optional cloud adapter
+(ROADMAP Step 8). No AWS, transcription, Telegram, authentication or migration changes
+are part of this adapter; existing local Whisper work is preserved. PDF is unchanged.
+
+
+## Hybrid draft classification
+
+Ollama remains the primary semantic extractor. After ExtractedWorkOrder validation
+and normal category resolution, build_draft fills only missing/unresolved category
+and missing priority using conservative deterministic rules on the original request
+or transcript. Valid AI proposals are never overwritten. Provider errors and invalid
+output still fail explicitly; this is not a switch to the mock provider. The same
+post-validation rules can fill unresolved fields from other valid provider contracts.
+
+The pure domain classifier in `backend/app/domain/draft_classification.py` proposes
+category names, never IDs. Case folding, whitespace/punctuation normalization and
+explicit Italian singular/plural lexical variants cover Ascensore, Idraulico,
+Climatizzazione, Riscaldamento, Elettrico, Rete, Vetri, Serramenti, Edile, Antincendio,
+Sicurezza and Arredi. Exactly one supported category is required, considering
+competing signals even when a competing category is not configured. The proposal
+must match exactly one normalized configured database category; its canonical name
+and ID are returned. No unmatched request defaults to Altro.
+
+Priority fallback runs only for a missing/null validated AI priority and uses the
+original report, never the generated description. Valid AI priorities are preserved.
+Rules evaluate URGENTE → ALTA → MEDIA → BASSA → PROGRAMMABILE. URGENTE requires
+explicit danger: trapped people, fire/smoke, gas leak/strong gas odor, exposed wires,
+sparks/electrical risk, grave flooding or water with explicit immediate damage.
+The word “urgente” alone is insufficient. ALTA requires a blocked/nonrestarting
+elevator, an explicitly complete important-service outage (including a whole
+building without heating), or a fault explicitly preventing normal use. An ordinary
+“riscaldamento non funzionante” is MEDIA, not evidence of a complete outage.
+MEDIA covers concrete active malfunctions/leaks without stronger severity evidence.
+BASSA covers explicit minor/cosmetic defects or minor deterioration/non-critical
+components with continued usability. PROGRAMMABILE covers preventive/planned work
+without evidence of active failure. An independent active failure takes precedence
+over minor/planned wording. Insufficient evidence leaves priority null.
+Recognizable requester-name, phone, email and address spans are excluded from
+priority evidence; they do not alter the extracted contact or address fields.
+
+Paired quoted passages and recognizable example clauses are excluded. Simple
+clause-local negation checks suppress obvious negated signals, including negated
+danger/leaks and coordinated negations; this is conservative
+lexical matching, not comprehensive language understanding. Ambiguity, unavailable
+categories and insufficient evidence retain manual-selection warnings. Existing
+warnings identify values supplied by deterministic rules without adding provenance
+fields or database storage. Description handling remains unchanged: the LLM technical
+summary is primary and missing summaries stay empty. Human review and explicit
+confirmation remain mandatory; analysis only reads the database and creates no ODL.
+No frontend, schema, migration, Whisper, Telegram or AWS changes are required.
+The technical PDF is not regenerated.

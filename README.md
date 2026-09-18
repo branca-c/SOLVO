@@ -288,7 +288,7 @@ AI_PROVIDER=mock
 
 `mock` è il default: applica regole locali deterministiche, senza servizi esterni,
 credenziali AWS o dipendenze aggiuntive. Il vecchio valore `fake` è un alias.
-Altri provider, compreso `bedrock`, restituiscono attualmente 503; non viene
+Altri provider diversi da `mock`, `fake` e `ollama`, compreso `bedrock`, restituiscono attualmente 503; non viene
 attivato un servizio remoto né nascosto un errore tramite fallback automatico.
 Il provider Bedrock con un modello Claude di classe Haiku è descritto come lavoro
 futuro in `docs/ROADMAP.md`, non implementato in questa slice.
@@ -320,15 +320,15 @@ Errori: input invalido 422, output del provider non conforme 502, provider non
 disponibile 503. Il frontend conserva il testo e permette di riprovare o passare
 al manuale; non ritenta automaticamente né crea ODL in caso di errore.
 
-### Audio-assisted intake (local mock)
+### Audio-assisted intake (mock or real local transcription)
 
 Install updated backend dependencies with `backend/.venv/bin/python -m pip install -r backend/requirements.txt`.
 Set `TRANSCRIPTION_PROVIDER=mock` (legacy `fake` also accepted),
 `TRANSCRIPTION_MOCK_TEXT="Perdita di acqua dal tubo del bagno."` and
 `MAX_AUDIO_UPLOAD_MB=10` in `.env`. The configurable server limit is 1–25 MiB;
 the browser conservatively allows at most 10 MiB. No AWS credentials are required.
-Every accepted file returns the configured demonstration text, **not recognized speech**.
-The transcript feeds the existing AI draft pipeline (`AI_PROVIDER=mock` locally).
+In mock mode every accepted file returns the configured demonstration text, **not recognized speech**.
+The transcript feeds the existing AI draft pipeline (selected via `AI_PROVIDER=mock|ollama`).
 
 Under **Nuovo ODL → Assistito da AI**, upload WebM/WAV/MP3/MP4 or choose
 **Registra audio → Ferma registrazione → Trascrivi e analizza**. Recording requires
@@ -336,7 +336,7 @@ microphone permission and a browser secure context (HTTPS or localhost); upload
 remains available if recording is unsupported or denied. Review the transcript and
 edit the shared form, then select **Conferma e crea ODL**. Audio analysis never creates
 an ODL. Audio is temporary only; no files or audio records are retained by this slice.
-Amazon Transcribe remains the future production provider described in the roadmap.
+Amazon Transcribe is an optional future cloud provider described in the roadmap, not implemented.
 
 ### Technician action links and Telegram Bot API
 
@@ -576,3 +576,153 @@ The Note section now shows existing notes first, or Nessuna nota presente,
 followed by spacing/separator, Aggiungi nota heading, textarea and button.
 This changes presentation only; WorkOrderNote backend behavior is unchanged.
 PDF regeneration remains deferred.
+
+
+## Real local audio transcription
+
+Install the updated backend dependencies in the virtual environment (this downloads
+Python packages, not a Whisper model):
+
+```sh
+backend/.venv/bin/python -m pip install -r backend/requirements.txt
+```
+
+To recognize the actual recorded/uploaded speech, set these root `.env` values and
+restart FastAPI:
+
+```dotenv
+TRANSCRIPTION_PROVIDER=local_whisper
+WHISPER_MODEL_SIZE=small
+WHISPER_DEVICE=auto
+WHISPER_COMPUTE_TYPE=auto
+WHISPER_LANGUAGE=it
+AI_PROVIDER=mock
+```
+
+`small` is the conservative multilingual development default. Larger models can
+improve accuracy but consume more RAM/VRAM and processing time; `base` is a lighter
+alternative. Local recognition has no per-request API cost. The first request may
+need network access to download model files into the library’s user cache (outside
+the repository), and takes longer while the model loads. Subsequent requests reuse
+the model in the same backend process; cached models can run offline. Restarting
+reloads the model into memory. Use a local converted-model directory as
+WHISPER_MODEL_SIZE if model files have already been provisioned offline.
+
+`auto` probes CUDA availability, tries the GPU when available and falls back to
+CPU/int8 if GPU initialization or inference fails. No machine-specific CUDA paths
+are set. CPU does not require CUDA; force `WHISPER_DEVICE=cpu` with
+`WHISPER_COMPUTE_TYPE=int8` when desired. Explicit `cuda` reports configuration/runtime
+failure instead of silently switching. For a fixed device, compute types supported
+by CTranslate2 can be configured; Italian is default and WHISPER_LANGUAGE can select
+another supported language code.
+
+MediaRecorder’s existing WebM/Opus upload is unchanged. PyAV decodes real audio bytes
+in a closed in-memory stream, including supported WAV, MPEG/MP3 and MP4 codecs.
+SOLVO retains no permanent audio file. The transcript passes through the original
+draft extraction/category resolution; review and explicit confirmation are still
+required before any ODL is created. The UI shows Trascrizione locale for local
+recognition and a simulated/demo warning only for mock responses.
+
+Empty/unreadable audio, no recognized speech, missing dependencies/model files,
+initialization and inference failures return readable errors without tracebacks.
+`TRANSCRIPTION_PROVIDER=mock` remains the deterministic test/demo option using
+TRANSCRIPTION_MOCK_TEXT. Automated tests stub the Whisper runtime; they never
+fetch a model. Amazon Transcribe is not implemented. PDF guide remains unchanged.
+Provider API reference: https://github.com/SYSTRAN/faster-whisper.
+
+
+## Estrazione semantica locale con Ollama
+
+`AI_PROVIDER=mock` mantiene l'estrazione deterministica per test/demo, senza rete.
+Per l'uso locale reale, avvia Ollama e scegli un modello già installato tramite
+`ollama list`; SOLVO non scarica né esegue pull di modelli. Configura la `.env`
+alla radice e riavvia FastAPI:
+
+```dotenv
+AI_PROVIDER=ollama
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=<nome-esatto-del-modello-gia-installato>
+OLLAMA_TIMEOUT_SECONDS=60
+OLLAMA_KEEP_ALIVE=30m
+```
+
+OLLAMA_MODEL è obbligatorio con Ollama; il timeout deve essere positivo e finito.
+Il backend chiama `/api/chat` con HTTPX e lo schema JSON di `ExtractedWorkOrder`,
+poi valida nuovamente con Pydantic. Nessun fallback automatico al mock.
+Le categorie sono i nomi letti dai record Category, forniti nel prompt e nello
+schema; solo il backend risolve un nome univoco in category_id.
+
+Whisper riconosce il parlato (speech-to-text); Ollama estrae i campi e sintetizza
+il problema tecnico. Sono responsabilità separate. Per l'intera pipeline reale
+usa anche `TRANSCRIPTION_PROVIDER=local_whisper` con le opzioni Whisper sopra.
+Testo digitato e transcript condividono la stessa estrazione: dati del richiedente,
+telefono, email, indirizzo, categoria, priorità e descrizione compilano il modulo
+esistente. Dati mancanti restano vuoti/null con avvisi; una descrizione mancante
+resta vuota, senza fallback al transcript. Completa, modifica e premi
+**Conferma e crea ODL**: solo allora viene chiamato il normale endpoint di creazione.
+
+Il prompt italiano vieta dati inventati, markdown, commenti e istruzioni del
+segnalante; richiede una sintesi tecnica senza nomi, telefono, email o indirizzo.
+Il backend esclude contatti/indirizzi non rintracciabili nel testo (consentendo
+normalizzazioni di punteggiatura/spazi). Se la sintesi Ollama contiene un valore
+esatto estratto di contatto/indirizzo, la risposta è rifiutata, senza manipolare
+frasi automaticamente. Il controllo è conservativo e non verifica tutte le
+possibili parafrasi. Tutti i dati richiedono comunque revisione umana.
+
+Ollama non raggiungibile, modello non configurato/non disponibile e timeout
+producono messaggi leggibili (503); JSON malformato, schema invalido o sintesi
+con dati ripetuti producono 502. Non sono esposti traceback o risposte grezze.
+I test usano HTTP simulato e non richiedono Ollama. Amazon Bedrock resta un
+provider cloud opzionale futuro, descritto in `docs/ROADMAP.md`; nessuna AWS
+è implementata e il PDF non viene rigenerato.
+
+
+## Hybrid draft classification
+
+Ollama remains the primary semantic extractor. After ExtractedWorkOrder validation
+and normal category resolution, build_draft fills only missing/unresolved category
+and missing priority using conservative deterministic rules on the original request
+or transcript. Valid AI proposals are never overwritten. Provider errors and invalid
+output still fail explicitly; this is not a switch to the mock provider. The same
+post-validation rules can fill unresolved fields from other valid provider contracts.
+
+The pure domain classifier in `backend/app/domain/draft_classification.py` proposes
+category names, never IDs. Case folding, whitespace/punctuation normalization and
+explicit Italian singular/plural lexical variants cover Ascensore, Idraulico,
+Climatizzazione, Riscaldamento, Elettrico, Rete, Vetri, Serramenti, Edile, Antincendio,
+Sicurezza and Arredi. Exactly one supported category is required, considering
+competing signals even when a competing category is not configured. The proposal
+must match exactly one normalized configured database category; its canonical name
+and ID are returned. No unmatched request defaults to Altro.
+
+Priority rules propose URGENTE only for explicit trapped people, immediate danger,
+fire/smoke, gas leak, grave electrical risk or flooding/strong leakage with explicit
+immediate damage risk. The word “urgente” alone is insufficient. ALTA covers a
+blocked/nonrestarting elevator and explicit complete service outages; MEDIA covers
+clear faults/degradation. BASSA and PROGRAMMABILE require explicit minor-discomfort
+or planned-maintenance wording. Danger and complete blockage take precedence over
+minor/planned wording. Insufficient evidence leaves priority null.
+
+Paired quoted passages and recognizable example clauses are excluded. Simple
+clause-local negation checks suppress obvious negated signals; this is conservative
+lexical matching, not comprehensive language understanding. Ambiguity, unavailable
+categories and insufficient evidence retain manual-selection warnings. Existing
+warnings identify values supplied by deterministic rules without adding provenance
+fields or database storage. Description handling remains unchanged: the LLM technical
+summary is primary and missing summaries stay empty. Human review and explicit
+confirmation remain mandatory; analysis only reads the database and creates no ODL.
+No frontend, schema, migration, Whisper, Telegram or AWS changes are required.
+The technical PDF is not regenerated.
+
+
+`OLLAMA_KEEP_ALIVE` (default `30m`) is passed as the top-level `keep_alive` field
+to Ollama `/api/chat`, retaining the selected model after requests to reduce reload
+latency during subsequent use. It does not preload, pull or download models and
+does not change `OLLAMA_MODEL` (keep `qwen2.5:7b`) or `OLLAMA_TIMEOUT_SECONDS`.
+The first request after unloading still incurs model loading.
+
+INFO application logs (`uvicorn.error.solvo.timing`) record `stage`, `duration_ms`
+and `outcome` for Ollama HTTP requests and total draft extraction. Audio requests
+also record transcription, extraction and total audio draft durations. Transcription
+timing wraps the existing provider call, including Whisper when selected. Logs
+contain no request/transcript/output content; timings are not added to API responses.

@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,9 +32,10 @@ class ExtractedWorkOrder(BaseModel):
 
 class WorkOrderDraft(ExtractedWorkOrder):
     category_id: int | None = None
-    description: str = Field(min_length=1, max_length=10000)
+    description: str = Field(max_length=10000)
 
 
 class AudioWorkOrderDraft(BaseModel):
+    transcription_source: Literal["mock", "local_whisper"] | None = None
     transcript: str
     draft: WorkOrderDraft

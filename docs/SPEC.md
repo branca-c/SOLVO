@@ -61,7 +61,7 @@ Reminders are separate timestamped textual follow-ups/requests, with required tr
 ## 5. Main flow
 
 1. The requester submits a text message or records audio in the browser.
-2. Audio is held temporarily for transcription through a provider and is never stored permanently in this slice. Local transcription is a deterministic mock.
+2. Audio is held temporarily for transcription through a provider and is never stored permanently in this slice. Transcription can use a deterministic mock or real local speech recognition.
 3. An AI provider returns structured proposed data: requester details, address, category, priority, description, and people-risk flag.
 4. The backend validates required fields, allowed values, and category existence.
 5. The requester sees an editable draft. No ODL exists until they explicitly confirm it.
@@ -225,13 +225,13 @@ before the existing WorkOrder creation endpoint is called. No ODL, assignment,
 history event, or category is created or modified by draft analysis.
 
 The draft has optional requester first/last name, phone, email, fault address,
-category ID/name and priority; description is required, with the source text as
-fallback. Missing values stay null, and missing/ambiguous categories or incomplete
+category ID/name and priority; missing technical description is returned as an
+empty editable field with a warning, never replaced with the source transcript. Missing values stay null, and missing/ambiguous categories or incomplete
 required fields produce review warnings. Categories must resolve to configured
 database rows, with no hardcoded IDs. Priorities use only the existing five enum
 values. No status or workflow action is inferred.
 
-Local extraction is deterministic: ascensore → Ascensore; perdita/acqua/tubo →
+The explicitly selected mock extraction is deterministic: ascensore → Ascensore; perdita/acqua/tubo →
 Idraulico; rete/internet/connessione → Rete; condizionatore/climatizzatore →
 Climatizzazione; riscaldamento/calorifero → Riscaldamento; vetro/finestra rotta →
 Vetri; corrente/elettrico → Elettrico. Multiple matches require manual category
@@ -241,6 +241,12 @@ normal fault MEDIA, minor inconvenience BASSA, planned/non-urgent maintenance
 PROGRAMMABILE. Without sufficient clues priority stays null. The local rules
 handle simple negations and require review for language they cannot interpret.
 Contacts and address are never filled with invented values.
+Ollama is instructed to propose the most complete fault location explicitly
+stated in the input, retaining street/place, civic number, city/locality,
+province and postal code when provided in the single fault-address field.
+Capitalization and comma separators may be normalized. Missing location parts
+must not be inferred from application context or geocoding; requester names
+and contact details do not belong in the address.
 
 The frontend shows analysis loading/errors, preserves the source text on failure,
 populates the existing form on success, and allows editing every creation field.
@@ -250,7 +256,7 @@ Text and audio drafts require confirmation; automatic creation is not included.
 ### Delivered audio intake
 
 `POST /api/ai/work-order-draft-audio` accepts multipart field `audio` and returns
-`{transcript, draft}` using the same extraction and category resolution as text intake.
+`{transcript, draft, transcription_source}` using the same extraction and category resolution as text intake.
 Supported MIME types: audio/webm (including codec parameters), audio/wav,
 audio/x-wav, audio/mpeg and audio/mp4. Missing/empty audio and empty or over-10000-character
 transcripts return 422; unsupported MIME returns 415; oversized audio returns 413.
@@ -409,3 +415,99 @@ The Note section now shows existing notes first, or Nessuna nota presente,
 followed by spacing/separator, Aggiungi nota heading, textarea and button.
 This changes presentation only; WorkOrderNote backend behavior is unchanged.
 PDF regeneration remains deferred.
+
+
+## Real local transcription delivery
+
+TRANSCRIPTION_PROVIDER=mock keeps deterministic demo text and a simulation warning.
+TRANSCRIPTION_PROVIDER=local_whisper recognizes actual uploaded/recorded speech
+locally with faster-whisper. Defaults: small multilingual model, auto device/compute,
+Italian (WHISPER_MODEL_SIZE, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE, WHISPER_LANGUAGE).
+Models load lazily and are reused within the backend process. Auto GPU failure falls
+back to CPU; CPU works without CUDA. Model files may need an initial download;
+recognition runs offline once available and has no per-request API charge. Larger
+models trade more resources for potentially better accuracy.
+
+WebM recording and supported WAV/MPEG/MP4 upload feed transcription, then the existing
+validated draft/category pipeline. Audio is not permanently retained. Empty speech
+and unreadable audio return 422; dependency/model/runtime failures return readable
+503 errors. Unknown provider configuration returns 503. Response metadata
+transcription_source is mock/local_whisper (nullable for custom providers). The UI
+labels the recognized transcript as Trascrizione locale or simulated/demo accordingly.
+All fields stay editable and explicit confirmation creates the ODL; analysis never
+creates one. Amazon Transcribe is not implemented; PDF regeneration is deferred.
+
+
+## Local semantic extraction delivery
+
+AI_PROVIDER=mock is the deterministic automated-test/demo provider. AI_PROVIDER=ollama
+selects real local semantic extraction, independently of transcription selection.
+Whisper handles speech-to-text; Ollama handles field extraction/technical summarization.
+Both typed text and recognized speech use the same draft pipeline and editable form.
+Only explicit Conferma e crea ODL invokes normal WorkOrder creation. Analysis never
+writes ODLs, assignments, history or categories.
+
+Ollama proposes the existing nullable requester names, phone/email, fault_address,
+category_name, priority and description. No missing data may be invented. Required
+missing values receive warnings and remain editable/incomplete. Description is only
+a concise technical fault/intervention summary, without requester/contact/address
+data; missing description remains empty. Exact extracted values repeated in an
+Ollama summary cause a controlled error rather than automatic text mangling.
+The mock retains its legacy deterministic source-text description for test/demo use.
+
+Category names are supplied dynamically from configured Category records; backend
+normalized exact matching remains authoritative for category_id. Missing, unknown
+or ambiguous names are eligible for the conservative fallback described below;
+if still unresolved they yield null category ID and manual-selection warnings. Only
+the five existing priorities are accepted; absent evidence after fallback yields null. Dramatic wording
+alone must not imply URGENTE. Ollama configuration/network/model/output failures
+are visible and never silently switch to mock. Amazon Bedrock remains an optional
+future cloud provider in ROADMAP; no cloud resources or PDF regeneration are delivered.
+
+
+## Hybrid draft classification
+
+Ollama remains the primary semantic extractor. After ExtractedWorkOrder validation
+and normal category resolution, build_draft fills only missing/unresolved category
+and missing priority using conservative deterministic rules on the original request
+or transcript. Valid AI proposals are never overwritten. Provider errors and invalid
+output still fail explicitly; this is not a switch to the mock provider. The same
+post-validation rules can fill unresolved fields from other valid provider contracts.
+
+The pure domain classifier in `backend/app/domain/draft_classification.py` proposes
+category names, never IDs. Case folding, whitespace/punctuation normalization and
+explicit Italian singular/plural lexical variants cover Ascensore, Idraulico,
+Climatizzazione, Riscaldamento, Elettrico, Rete, Vetri, Serramenti, Edile, Antincendio,
+Sicurezza and Arredi. Exactly one supported category is required, considering
+competing signals even when a competing category is not configured. The proposal
+must match exactly one normalized configured database category; its canonical name
+and ID are returned. No unmatched request defaults to Altro.
+
+Priority fallback runs only for a missing/null validated AI priority and uses the
+original report, never the generated description. Valid AI priorities are preserved.
+Rules evaluate URGENTE → ALTA → MEDIA → BASSA → PROGRAMMABILE. URGENTE requires
+explicit danger: trapped people, fire/smoke, gas leak/strong gas odor, exposed wires,
+sparks/electrical risk, grave flooding or water with explicit immediate damage.
+The word “urgente” alone is insufficient. ALTA requires a blocked/nonrestarting
+elevator, an explicitly complete important-service outage (including a whole
+building without heating), or a fault explicitly preventing normal use. An ordinary
+“riscaldamento non funzionante” is MEDIA, not evidence of a complete outage.
+MEDIA covers concrete active malfunctions/leaks without stronger severity evidence.
+BASSA covers explicit minor/cosmetic defects or minor deterioration/non-critical
+components with continued usability. PROGRAMMABILE covers preventive/planned work
+without evidence of active failure. An independent active failure takes precedence
+over minor/planned wording. Insufficient evidence leaves priority null.
+Recognizable requester-name, phone, email and address spans are excluded from
+priority evidence; they do not alter the extracted contact or address fields.
+
+Paired quoted passages and recognizable example clauses are excluded. Simple
+clause-local negation checks suppress obvious negated signals, including negated
+danger/leaks and coordinated negations; this is conservative
+lexical matching, not comprehensive language understanding. Ambiguity, unavailable
+categories and insufficient evidence retain manual-selection warnings. Existing
+warnings identify values supplied by deterministic rules without adding provenance
+fields or database storage. Description handling remains unchanged: the LLM technical
+summary is primary and missing summaries stay empty. Human review and explicit
+confirmation remain mandatory; analysis only reads the database and creates no ODL.
+No frontend, schema, migration, Whisper, Telegram or AWS changes are required.
+The technical PDF is not regenerated.

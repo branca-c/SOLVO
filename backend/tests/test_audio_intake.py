@@ -23,6 +23,7 @@ def test_audio_mock_uses_draft_pipeline_without_writes(api, mime):
     response = client.post(URL, files={'audio': ('sample', b'demo audio', mime)})
     assert response.status_code == 200
     data = response.json()
+    assert data['transcription_source'] == 'mock'
     assert data['transcript'] == 'Perdita di acqua dal tubo del bagno.'
     assert data['draft']['description'] == data['transcript']
     assert data['draft']['category_id'] == 2

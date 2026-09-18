@@ -141,7 +141,7 @@ class StubProvider:
     def __init__(self, result):
         self.result = result
 
-    def extract(self, text):
+    def extract(self, text, categories):
         return self.result
 
 
@@ -164,7 +164,7 @@ def test_fallback_description_and_ungrounded_details_are_removed(api):
         'category_name': '  idraulico  ',
     })
     draft = client.post(URL, json={'text': 'Perdita dal tubo'}).json()
-    assert draft['description'] == 'Perdita dal tubo'
+    assert draft['description'] == ''
     assert draft['category_id'] == 2
     for field in ('user_first_name', 'user_phone', 'user_email', 'fault_address'):
         assert draft[field] is None
@@ -182,7 +182,7 @@ def test_unsupported_provider_returns_503_without_aws_or_silent_fallback(api, mo
 def test_provider_failure_is_recoverable_and_does_not_expose_details(api, monkeypatch):
     client, _ = api
 
-    def fail(self, text):
+    def fail(self, text, categories):
         raise RuntimeError('provider secret technical details')
 
     monkeypatch.setattr(MockAIProvider, 'extract', fail)

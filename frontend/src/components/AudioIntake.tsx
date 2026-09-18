@@ -9,6 +9,7 @@ export function AudioIntake({ disabled, onDraft, onBusy }: {
   const [state, setState] = useState<'idle' | 'requesting' | 'recording' | 'analyzing'>('idle')
   const [error, setError] = useState('')
   const [transcript, setTranscript] = useState('')
+  const [source, setSource] = useState<'mock' | 'local_whisper' | null>()
   const recorder = useRef<MediaRecorder | null>(null)
   const stream = useRef<MediaStream | null>(null)
   const alive = useRef(true)
@@ -69,14 +70,14 @@ export function AudioIntake({ disabled, onDraft, onBusy }: {
     setState('analyzing'); onBusy(true); setError('')
     try {
       const result = await api.audioDraft(file, controller.signal)
-      if (!controller.signal.aborted) { setTranscript(result.transcript); onDraft(result.draft) }
+      if (!controller.signal.aborted) { setTranscript(result.transcript); setSource(result.transcription_source); onDraft(result.draft) }
     } catch (e) { if (!controller.signal.aborted) setError(messageFor(e)) }
     finally { finish() }
   }
   const locked = disabled || state !== 'idle'
   return <section className="surface ai-intake" aria-label="Intake audio">
     <h2>Descrivi il guasto a voce</h2>
-    <p>Carica o registra un audio (WebM, WAV, MP3, MP4; massimo 10 MiB). In modalità mock viene usato un testo dimostrativo, senza riconoscimento vocale.</p>
+    <p>Carica o registra un audio (WebM, WAV, MP3, MP4; massimo 10 MiB). La trascrizione compila una bozza da rivedere e confermare.</p>
     <label>File audio<input type="file" accept="audio/webm,audio/wav,audio/x-wav,audio/mpeg,audio/mp4" disabled={locked}
       onChange={event => { setFile(event.target.files?.[0]); setError('') }} /></label>
     <div className="heading-actions">
@@ -86,6 +87,6 @@ export function AudioIntake({ disabled, onDraft, onBusy }: {
     </div>
     <p role="status">{state === 'recording' ? 'Registrazione in corso…' : state === 'requesting' ? 'Accesso al microfono…' : state === 'analyzing' ? 'Trascrizione e analisi…' : file ? `Audio selezionato: ${file.name}` : 'Nessun audio selezionato.'}</p>
     {error && <p role="alert">{error}</p>}
-    {transcript && <div><h3>Trascrizione dell’ultima analisi</h3><p className="audio-transcript">{transcript}</p><p>Rivedi e modifica la bozza prima di confermare la creazione.</p></div>}
+    {transcript && <div><h3>Trascrizione dell’ultima analisi</h3>{source === 'local_whisper' && <p>Trascrizione locale</p>}{source === 'mock' && <p>Trascrizione simulata: testo dimostrativo, non riconosciuto dall’audio.</p>}<p className="audio-transcript">{transcript}</p><p>Rivedi e modifica la bozza prima di confermare la creazione.</p></div>}
   </section>
 }

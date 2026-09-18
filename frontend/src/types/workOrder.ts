@@ -84,6 +84,7 @@ export interface WorkOrderDraft {
 }
 
 export interface AudioWorkOrderDraft {
+  transcription_source?: 'mock' | 'local_whisper' | null
   transcript: string
   draft: WorkOrderDraft
 }

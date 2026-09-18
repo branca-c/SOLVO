@@ -9,7 +9,7 @@ import { order } from './fixtures'
 import type { WorkOrderDraft } from '../types/workOrder'
 
 const draft: WorkOrderDraft = {
-  user_first_name: 'Ada', user_last_name: 'Rossi', user_phone: '3331234567', user_email: null,
+  user_first_name: 'Ada', user_last_name: 'Rossi', user_phone: '3331234567', user_email: 'ada@example.com',
   fault_address: 'Via Roma 12', category_id: 2, category_name: 'Idraulico', priority: 'MEDIA',
   description: 'Perdita dal tubo del bagno.', warnings: ['Verifica i dati prima di confermare.'],
 }
@@ -34,6 +34,12 @@ it('analyzes into the editable form and creates only on explicit confirmation', 
   expect(create).not.toHaveBeenCalled()
   expect(onCreated).not.toHaveBeenCalled()
   expect((screen.getByLabelText('Nome *') as HTMLInputElement).value).toBe('Ada')
+  expect((screen.getByLabelText('Cognome *') as HTMLInputElement).value).toBe('Rossi')
+  expect((screen.getByLabelText('Telefono *') as HTMLInputElement).value).toBe('3331234567')
+  expect((screen.getByLabelText(/Email/) as HTMLInputElement).value).toBe('ada@example.com')
+  expect((screen.getByLabelText('Indirizzo del guasto *') as HTMLInputElement).value).toBe(draft.fault_address)
+  expect((screen.getByLabelText('Priorità *') as HTMLSelectElement).value).toBe('MEDIA')
+  expect((screen.getByLabelText('Descrizione del guasto *') as HTMLTextAreaElement).value).toBe(draft.description)
   expect((screen.getByLabelText('Categoria *') as HTMLInputElement).value).toBe('2')
   expect(screen.getByText('Verifica i dati prima di confermare.')).toBeTruthy()
   await userEvent.clear(screen.getByLabelText('Cognome *'))
@@ -43,13 +49,13 @@ it('analyzes into the editable form and creates only on explicit confirmation', 
   await waitFor(() => expect(onCreated).toHaveBeenCalledWith(order.id))
   expect(create).toHaveBeenCalledTimes(1)
   expect(create).toHaveBeenCalledWith({
-    user_first_name: 'Ada', user_last_name: 'Bianchi', user_phone: '3331234567', user_email: null,
+    user_first_name: 'Ada', user_last_name: 'Bianchi', user_phone: '3331234567', user_email: 'ada@example.com',
     fault_address: 'Via Roma 12', category_id: 2, priority: 'ALTA', description: draft.description,
   })
 })
 
 it('leaves missing fields and priority empty and requires completion', async () => {
-  vi.spyOn(api, 'draft').mockResolvedValue({ ...draft, user_phone: null, category_id: null, category_name: null, priority: null })
+  vi.spyOn(api, 'draft').mockResolvedValue({ ...draft, user_phone: null, fault_address: null, description: '', category_id: null, category_name: null, priority: null })
   const create = vi.spyOn(api, 'create')
   render(<CreateWorkOrder onCreated={vi.fn()} />)
   await userEvent.click(screen.getByRole('button', { name: 'Assistito da AI' }))
@@ -57,9 +63,17 @@ it('leaves missing fields and priority empty and requires completion', async () 
   await userEvent.click(screen.getByRole('button', { name: 'Analizza con AI' }))
   await screen.findByText('Bozza pronta: rivedi e conferma i dati.')
   expect((screen.getByLabelText('Telefono *') as HTMLInputElement).value).toBe('')
+  expect((screen.getByLabelText('Indirizzo del guasto *') as HTMLInputElement).value).toBe('')
+  expect((screen.getByLabelText('Descrizione del guasto *') as HTMLTextAreaElement).value).toBe('')
   expect((screen.getByLabelText('Priorità *') as HTMLSelectElement).value).toBe('')
   await userEvent.click(screen.getByRole('button', { name: 'Conferma e crea ODL' }))
   expect(create).not.toHaveBeenCalled()
+  await userEvent.type(screen.getByLabelText('Telefono *'), '3471234567')
+  await userEvent.type(screen.getByLabelText('Indirizzo del guasto *'), 'Via Verdi 5')
+  await userEvent.type(screen.getByLabelText('Descrizione del guasto *'), 'Perdita dal tubo.')
+  await userEvent.selectOptions(screen.getByLabelText('Categoria *'), '2')
+  await userEvent.selectOptions(screen.getByLabelText('Priorità *'), 'MEDIA')
+  expect((screen.getByLabelText('Telefono *') as HTMLInputElement).value).toBe('3471234567')
 })
 
 it('shows loading and an error, preserves source text and allows retry', async () => {
@@ -105,7 +119,7 @@ it('aborts analysis when leaving the creation page', async () => {
 })
 
 it('uploads audio, shows transcript and requires editable confirmation', async () => {
-  const audio = vi.spyOn(api, 'audioDraft').mockResolvedValue({ transcript: 'Perdita dal tubo.', draft })
+  const audio = vi.spyOn(api, 'audioDraft').mockResolvedValue({ transcript: 'Perdita dal tubo.', draft, transcription_source: 'local_whisper' })
   const create = vi.spyOn(api, 'create').mockResolvedValue(order)
   render(<CreateWorkOrder onCreated={vi.fn()} />)
   await userEvent.click(screen.getByRole('button', { name: 'Assistito da AI' }))
@@ -113,9 +127,17 @@ it('uploads audio, shows transcript and requires editable confirmation', async (
   await userEvent.upload(screen.getByLabelText('File audio'), file)
   await userEvent.click(screen.getByRole('button', { name: 'Trascrivi e analizza' }))
   await screen.findByText('Perdita dal tubo.')
+  expect(screen.getByText('Trascrizione locale')).toBeTruthy()
+  expect(screen.queryByText(/Trascrizione simulata/)).toBeNull()
   expect(audio).toHaveBeenCalledWith(file, expect.any(AbortSignal))
   expect(create).not.toHaveBeenCalled()
   expect((screen.getByLabelText('Nome *') as HTMLInputElement).value).toBe('Ada')
+  expect((screen.getByLabelText('Cognome *') as HTMLInputElement).value).toBe('Rossi')
+  expect((screen.getByLabelText('Telefono *') as HTMLInputElement).value).toBe(draft.user_phone)
+  expect((screen.getByLabelText('Indirizzo del guasto *') as HTMLInputElement).value).toBe(draft.fault_address)
+  expect((screen.getByLabelText('Categoria *') as HTMLSelectElement).value).toBe('2')
+  expect((screen.getByLabelText('Priorità *') as HTMLSelectElement).value).toBe('MEDIA')
+  expect((screen.getByLabelText('Descrizione del guasto *') as HTMLTextAreaElement).value).toBe(draft.description)
   await userEvent.clear(screen.getByLabelText('Nome *'))
   await userEvent.type(screen.getByLabelText('Nome *'), 'Maria')
   await userEvent.click(screen.getByRole('button', { name: 'Conferma e crea ODL' }))
@@ -184,4 +206,30 @@ it('resolves the draft when categories load during an outstanding analysis', asy
   await waitFor(() => expect(api.categories).toHaveBeenCalledTimes(1))
   draftReady(draft)
   await waitFor(() => expect((screen.getByLabelText('Categoria *') as HTMLSelectElement).value).toBe('2'))
+})
+
+
+it('labels mock audio as simulated and keeps draft review mandatory', async () => {
+  vi.spyOn(api, 'audioDraft').mockResolvedValue({ transcript: 'Testo demo', draft, transcription_source: 'mock' })
+  const create = vi.spyOn(api, 'create')
+  render(<CreateWorkOrder onCreated={vi.fn()} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Assistito da AI' }))
+  await userEvent.upload(screen.getByLabelText('File audio'), new File(['audio'], 'demo.webm', { type: 'audio/webm' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Trascrivi e analizza' }))
+  expect(await screen.findByText('Testo demo')).toBeTruthy()
+  expect(screen.getByText(/Trascrizione simulata/)).toBeTruthy()
+  expect(screen.queryByText('Trascrizione locale')).toBeNull()
+  expect(create).not.toHaveBeenCalled()
+})
+it('shows audio provider error without creating or populating a draft', async () => {
+  vi.spyOn(api, 'audioDraft').mockRejectedValue(new Error('Nessun parlato riconosciuto.'))
+  const create = vi.spyOn(api, 'create')
+  render(<CreateWorkOrder onCreated={vi.fn()} />)
+  await userEvent.click(screen.getByRole('button', { name: 'Assistito da AI' }))
+  await userEvent.upload(screen.getByLabelText('File audio'), new File(['audio'], 'silenzio.webm', { type: 'audio/webm' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Trascrivi e analizza' }))
+  expect(await screen.findByRole('alert')).toBeTruthy()
+  expect(screen.getByText('Nessun parlato riconosciuto.')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Conferma e crea ODL' })).toBeNull()
+  expect(create).not.toHaveBeenCalled()
 })

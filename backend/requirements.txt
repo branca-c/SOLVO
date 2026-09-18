@@ -8,3 +8,5 @@ pytest==8.4.1
 httpx==0.28.1
 
 python-multipart==0.0.22
+
+faster-whisper==1.2.1

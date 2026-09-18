@@ -58,7 +58,7 @@ def _priority(text: str) -> str | None:
 class MockAIProvider:
     """Conservative deterministic heuristics, not a language model."""
 
-    def extract(self, text: str) -> object:
+    def extract(self, text: str, categories: list[str]) -> object:
         first_name = _labelled(text, "nome")
         last_name = _labelled(text, "cognome")
         # Free-form names require an explicit introduction and two capitalized tokens.
