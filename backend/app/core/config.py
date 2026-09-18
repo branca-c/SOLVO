@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     whisper_device: str = "auto"
     whisper_compute_type: str = "auto"
     whisper_language: str = "it"
+    whisper_beam_size: int = Field(default=5, ge=1)
     max_audio_upload_mb: int = Field(default=10, ge=1, le=25)
 
     model_config = SettingsConfigDict(

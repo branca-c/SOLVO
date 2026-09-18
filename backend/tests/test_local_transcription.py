@@ -5,11 +5,13 @@ from unittest.mock import Mock
 import pytest
 from sqlalchemy import event
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
+from pydantic import ValidationError
 from app.services.transcription import (
     InvalidAudioError, LocalWhisperTranscriptionProvider, MockTranscriptionProvider,
     NoSpeechError, TranscriptionUnavailableError, _local_provider,
     create_transcription_provider,
+    CONTACT_TRANSCRIPTION_HINT,
 )
 
 
@@ -53,7 +55,7 @@ def test_selection_lazy_cache_actual_bytes_and_segments(runtime):
     for _ in range(2):
         assert provider.transcribe(b'actual webm bytes', 'audio/webm') == 'Guasto elettrico in Via Roma 12.'
     runtime.factory.assert_called_once_with('small', device='cpu', compute_type='int8')
-    runtime.model.transcribe.assert_called_with(runtime.waveform, language='it', vad_filter=True)
+    runtime.model.transcribe.assert_called_with(runtime.waveform, language='it', vad_filter=True, initial_prompt=CONTACT_TRANSCRIPTION_HINT, beam_size=3)
     assert all(stream.closed for stream in runtime.streams)
 
 
@@ -61,7 +63,7 @@ def test_language_and_explicit_cpu_compute(runtime):
     provider = create_transcription_provider('local_whisper', '', model_size='base', device='cpu', compute_type='float32', language='en')
     provider.transcribe(b'actual webm bytes', 'audio/wav')
     runtime.factory.assert_called_once_with('base', device='cpu', compute_type='float32')
-    runtime.model.transcribe.assert_called_with(runtime.waveform, language='en', vad_filter=True)
+    runtime.model.transcribe.assert_called_with(runtime.waveform, language='en', vad_filter=True, initial_prompt=CONTACT_TRANSCRIPTION_HINT, beam_size=3)
 
 
 def test_auto_cuda_initialization_falls_back_and_reuses_cpu(runtime):
@@ -139,13 +141,15 @@ def test_local_endpoint_uses_existing_draft_pipeline_without_writes(api, runtime
     monkeypatch.setattr(settings, 'ai_provider', 'mock')
     monkeypatch.setattr(settings, 'transcription_provider', 'local_whisper')
     for field, value in [('whisper_model_size', 'small'), ('whisper_device', 'auto'),
-                         ('whisper_compute_type', 'auto'), ('whisper_language', 'it')]:
+                         ('whisper_compute_type', 'auto'), ('whisper_language', 'it'),
+                         ('whisper_beam_size', 5)]:
         monkeypatch.setattr(settings, field, value)
     client, engine = api
     statements = []
     event.listen(engine, 'before_cursor_execute', lambda conn, cursor, statement, *args: statements.append(statement))
     response = client.post('/api/ai/work-order-draft-audio', files={'audio': ('recording.webm', b'actual webm bytes', 'audio/webm;codecs=opus')})
     assert response.status_code == 200
+    runtime.model.transcribe.assert_called_with(runtime.waveform, language='it', vad_filter=True, initial_prompt=CONTACT_TRANSCRIPTION_HINT, beam_size=5)
     data = response.json()
     assert data['transcript'] == 'Guasto elettrico in Via Roma 12.'
     assert data['transcription_source'] == 'local_whisper'
@@ -193,3 +197,34 @@ def test_cpu_inference_failure_is_readable_and_stream_is_closed(runtime):
     with pytest.raises(TranscriptionUnavailableError, match='Trascrizione locale non riuscita'):
         LocalWhisperTranscriptionProvider().transcribe(b'actual webm bytes', 'audio/webm')
     assert runtime.streams[0].closed
+
+
+@pytest.mark.parametrize('beam_size', [1, 3, 5])
+def test_configured_beam_size_and_cache_reuse(runtime, beam_size):
+    provider = create_transcription_provider('local_whisper', '', beam_size=beam_size)
+    assert provider is create_transcription_provider('local_whisper', '', beam_size=beam_size)
+    for _ in range(2):
+        provider.transcribe(b'actual webm bytes', 'audio/webm')
+    runtime.factory.assert_called_once_with('small', device='cpu', compute_type='int8')
+    runtime.model.transcribe.assert_called_with(runtime.waveform, language='it', vad_filter=True, initial_prompt=CONTACT_TRANSCRIPTION_HINT, beam_size=beam_size)
+    assert provider is not create_transcription_provider('local_whisper', '', beam_size=beam_size + 1)
+
+
+def test_beam_size_settings_default_and_environment(monkeypatch):
+    monkeypatch.delenv('WHISPER_BEAM_SIZE', raising=False)
+    assert Settings(_env_file=None).whisper_beam_size == 5
+    monkeypatch.setenv('WHISPER_BEAM_SIZE', '5')
+    assert Settings(_env_file=None).whisper_beam_size == 5
+
+
+@pytest.mark.parametrize('value', ['0', '-1', '1.5', 'invalid'])
+def test_beam_size_settings_reject_invalid_values(monkeypatch, value):
+    monkeypatch.setenv('WHISPER_BEAM_SIZE', value)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+@pytest.mark.parametrize('value', [0, -1, 1.5, '3', True])
+def test_direct_provider_rejects_invalid_beam_size(value):
+    with pytest.raises(TranscriptionUnavailableError, match='Configurazione'):
+        LocalWhisperTranscriptionProvider(beam_size=value)

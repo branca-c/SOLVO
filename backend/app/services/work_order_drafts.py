@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.draft_classification import category_fallback, normalize, priority_fallback
+from app.domain.email_addresses import audio_email_candidate, email_grounded
 from app.models import Category
 from app.services.timing import timed
 from app.schemas.work_order_draft import ExtractedWorkOrder, WorkOrderDraft
@@ -16,6 +17,8 @@ def _normalize(value: str) -> str:
 
 
 def _grounded(field: str, value: str, text: str) -> bool:
+    if field == "user_email":
+        return email_grounded(value, text)
     if field == "user_phone":
         digits = re.sub(r"\D", "", value)
         pattern = r"(?<!\d)" + r"[\s()+.\-]*".join(digits) + r"(?!\d)"
@@ -34,7 +37,7 @@ def _grounded(field: str, value: str, text: str) -> bool:
     return f" {tokens(value)} " in f" {tokens(text)} "
 
 
-def build_draft(db: Session, text: str, provider: AIProvider) -> WorkOrderDraft:
+def build_draft(db: Session, text: str, provider: AIProvider, *, audio: bool = False) -> WorkOrderDraft:
     with timed("draft_extraction_total"):
         categories = list(db.scalars(select(Category).order_by(Category.name)))
         try:
@@ -50,11 +53,16 @@ def build_draft(db: Session, text: str, provider: AIProvider) -> WorkOrderDraft:
 
         values = extracted.model_dump()
         warnings = list(extracted.warnings)
+        audio_email = audio_email_candidate(text) if audio else None
+        if audio_email and values["user_email"] != audio_email:
+            values["user_email"] = audio_email
+        if audio_email and (extracted.user_email != audio_email or not email_grounded(audio_email, text)):
+            warnings.append("Email ricostruita dalla trascrizione audio: verifica prima di confermare.")
         # Even a later model provider must not invent contact/address/name values.
         for field in ("user_first_name", "user_last_name", "user_phone", "user_email", "fault_address"):
             value = values[field]
             # Permit harmless punctuation/spacing normalization (e.g. city commas).
-            if value and not _grounded(field, value, text):
+            if value and not (field == "user_email" and value == audio_email) and not _grounded(field, value, text):
                 values[field] = None
                 warnings.append("Un dato non presente nel testo è stato escluso dalla bozza.")
         category_id = None

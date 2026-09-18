@@ -1,7 +1,8 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.domain.email_addresses import valid_email
 from app.models.enums import Priority
 from app.schemas.work_order import Address, Email, Name, Phone
 
@@ -28,6 +29,21 @@ class ExtractedWorkOrder(BaseModel):
     warnings: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(
         default_factory=list, max_length=10
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_invalid_optional_email(cls, data):
+        if isinstance(data, dict) and isinstance(data.get("user_email"), str):
+            if not valid_email(data["user_email"].strip()):
+                data = dict(data)
+                data["user_email"] = None
+                warnings = data.get("warnings", [])
+                if isinstance(warnings, list):
+                    data["warnings"] = [
+                        "Email non valida: inseriscila o correggila prima di confermare.",
+                        *warnings[:9],
+                    ]
+        return data
 
 
 class WorkOrderDraft(ExtractedWorkOrder):

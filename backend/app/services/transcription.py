@@ -17,6 +17,12 @@ class NoSpeechError(Exception):
     pass
 
 
+CONTACT_TRANSCRIPTION_HINT = (
+    "Dati di contatto: nelle email chiocciola significa @, punto significa ., "
+    "underscore significa _. Trascrivi fedelmente numeri di telefono e indirizzi email."
+)
+
+
 class TranscriptionProvider(Protocol):
     def transcribe(self, audio: bytes, content_type: str) -> str: ...
 
@@ -31,14 +37,15 @@ class MockTranscriptionProvider:
 
 class LocalWhisperTranscriptionProvider:
     def __init__(self, model_size: str = "small", device: str = "auto",
-                 compute_type: str = "auto", language: str = "it"):
+                 compute_type: str = "auto", language: str = "it", beam_size: int = 3):
         self.model_size = model_size.strip()
         self.device = device.strip().lower()
         self.compute_type = compute_type.strip().lower()
         self.language = language.strip().lower()
+        self.beam_size = beam_size
         if self.device not in {"auto", "cpu", "cuda"} or not all(
             (self.model_size, self.compute_type, self.language)
-        ):
+        ) or type(self.beam_size) is not int or self.beam_size < 1:
             raise TranscriptionUnavailableError("Configurazione della trascrizione locale non valida.")
         self._model = None
         self._active_device = None
@@ -76,7 +83,11 @@ class LocalWhisperTranscriptionProvider:
             self._initialize(model_class, "cpu")
 
     def _recognize(self, waveform) -> str:
-        segments, _ = self._model.transcribe(waveform, language=self.language, vad_filter=True)
+        segments, _ = self._model.transcribe(
+            waveform, language=self.language, vad_filter=True,
+            initial_prompt=CONTACT_TRANSCRIPTION_HINT,
+            beam_size=self.beam_size,
+        )
         # faster-whisper performs inference when the segment generator is consumed.
         return " ".join(segment.text.strip() for segment in segments if segment.text.strip()).strip()
 
@@ -121,8 +132,8 @@ class LocalWhisperTranscriptionProvider:
 
 
 @lru_cache(maxsize=4)
-def _local_provider(model_size: str, device: str, compute_type: str, language: str):
-    return LocalWhisperTranscriptionProvider(model_size, device, compute_type, language)
+def _local_provider(model_size: str, device: str, compute_type: str, language: str, beam_size: int):
+    return LocalWhisperTranscriptionProvider(model_size, device, compute_type, language, beam_size)
 
 
 _provider_lock = Lock()
@@ -130,11 +141,11 @@ _provider_lock = Lock()
 
 def create_transcription_provider(name: str, mock_text: str, *, model_size: str = "small",
                                   device: str = "auto", compute_type: str = "auto",
-                                  language: str = "it") -> TranscriptionProvider:
+                                  language: str = "it", beam_size: int = 3) -> TranscriptionProvider:
     selected = name.strip().casefold()
     if selected in {"mock", "fake"}:
         return MockTranscriptionProvider(mock_text)
     if selected == "local_whisper":
         with _provider_lock:
-            return _local_provider(model_size, device, compute_type, language)
+            return _local_provider(model_size, device, compute_type, language, beam_size)
     raise TranscriptionUnavailableError("Provider di trascrizione sconosciuto. Usa mock o local_whisper.")

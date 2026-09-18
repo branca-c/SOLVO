@@ -419,10 +419,27 @@ PDF regeneration remains deferred.
 
 ## Real local transcription delivery
 
+Audio intake supplies a short Italian contact transcription hint to Whisper.
+The returned transcript remains unchanged for display and AI extraction. Only
+audio drafts reconcile email expressions following an explicit email/e-mail/mail
+cue: spoken chiocciola/at, punto and underscore are normalized within a bounded
+contact expression. A missing @ represented by a hyphen is repaired only when
+exactly one split produces a syntactically valid local part and dotted domain.
+Spoken separators may be glued to adjacent text. Ambiguous expressions are left
+for manual review. Only reconstructed audio domains may be canonicalized to a
+small explicit common-provider allowlist, and only for a unique edit-distance-one
+match; unknown domains are retained, missing domains are never invented. Literal
+valid emails remain unchanged. Reconstruction/correction carries a review warning.
+Invalid optional extracted emails become null with a warning rather than failing
+the whole draft. Email grounding preserves punctuation. Text intake never uses
+the audio repair. All proposed contact details still require human confirmation.
+
 TRANSCRIPTION_PROVIDER=mock keeps deterministic demo text and a simulation warning.
 TRANSCRIPTION_PROVIDER=local_whisper recognizes actual uploaded/recorded speech
 locally with faster-whisper. Defaults: small multilingual model, auto device/compute,
 Italian (WHISPER_MODEL_SIZE, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE, WHISPER_LANGUAGE).
+WHISPER_BEAM_SIZE is configurable as an integer >= 1, default 3 for benchmarking;
+5 restores the previous beam-search baseline. Other decoding options are unchanged.
 Models load lazily and are reused within the backend process. Auto GPU failure falls
 back to CPU; CPU works without CUDA. Model files may need an initial download;
 recognition runs offline once available and has no per-request API charge. Larger

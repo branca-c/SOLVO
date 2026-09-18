@@ -505,10 +505,30 @@ PDF regeneration remains deferred.
 
 ## Local speech recognition adapter
 
+Whisper receives a short Italian initial_prompt for faithful contact transcription,
+without changing model/device configuration or decoding. A pure domain helper
+reconstructs only bounded, explicitly cued audio email expressions. The audio
+orchestrator opts into reconciliation in build_draft; text callers do not.
+AI extraction still receives the unchanged transcript. Reconciliation occurs
+after extraction validation and before grounding, with a review warning for
+corrections. Unique syntactically valid hyphen splits may recover a missing @;
+ambiguous splits and missing cues never authorize repair. Bounded parsing supports
+glued spoken separators; possible 'at' positions must yield a unique valid email.
+Literal valid addresses bypass reinterpretation. Reconstructed domain portions
+may map to gmail.com, outlook.com, hotmail.com, yahoo.com, libero.it, virgilio.it
+or icloud.com only at a unique edit distance of one. Ambiguous matches reject
+the reconstruction; unmatched custom domains are retained. No network lookup or
+missing-domain inference is performed. A reconstruction warning is retained even
+when AI independently proposed the same corrected email.
+ExtractedWorkOrder sanitizes invalid optional email strings to null with a warning
+at both provider and service validation boundaries. The persistence/input schemas
+are unchanged. Email-specific grounding matches punctuation exactly; a validated
+audio reconstruction supplies separate evidence for spoken separator conversion.
+
 LocalWhisperTranscriptionProvider implements the existing audio-bytes transcription
 port without database access. Lazy imports isolate optional runtime initialization
 from mock use. The provider factory caches local adapters by model/device/compute/
-language (bounded to four configurations); each owns a lazy model and a lock serializing
+language/beam size (bounded to four configurations); each owns a lazy model and a lock serializing
 first load and inference. Factory construction is also locked to avoid duplicate
 adapters on concurrent first requests. One stable application configuration reuses
 one model per backend process. Restart releases that cache; workers each own a model.

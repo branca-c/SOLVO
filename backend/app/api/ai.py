@@ -51,6 +51,7 @@ def get_transcription_provider(
             settings.transcription_provider, settings.transcription_mock_text,
             model_size=settings.whisper_model_size, device=settings.whisper_device,
             compute_type=settings.whisper_compute_type, language=settings.whisper_language,
+            beam_size=settings.whisper_beam_size,
         )
     except TranscriptionUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

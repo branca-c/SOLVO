@@ -596,6 +596,7 @@ WHISPER_MODEL_SIZE=small
 WHISPER_DEVICE=auto
 WHISPER_COMPUTE_TYPE=auto
 WHISPER_LANGUAGE=it
+WHISPER_BEAM_SIZE=3
 AI_PROVIDER=mock
 ```
 
@@ -607,6 +608,9 @@ the repository), and takes longer while the model loads. Subsequent requests reu
 the model in the same backend process; cached models can run offline. Restarting
 reloads the model into memory. Use a local converted-model directory as
 WHISPER_MODEL_SIZE if model files have already been provisioned offline.
+WHISPER_BEAM_SIZE is an integer >= 1; the default is 3 for benchmarking.
+Set it to 5 to compare against the previous decoding baseline. Restart the backend
+after changing configuration.
 
 `auto` probes CUDA availability, tries the GPU when available and falls back to
 CPU/int8 if GPU initialization or inference fails. No machine-specific CUDA paths

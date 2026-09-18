@@ -45,7 +45,7 @@ def build_audio_draft(
             raise AudioDraftError(422, "Trascrizione vuota o troppo lunga (massimo 10000 caratteri).")
         transcript = transcript.strip()
         with timed("audio_extraction"):
-            draft = build_draft(db, transcript, provider)
+            draft = build_draft(db, transcript, provider, audio=True)
         if isinstance(transcription, MockTranscriptionProvider):
             draft.warnings = ["Trascrizione simulata: testo dimostrativo, non riconosciuto dall’audio.", *draft.warnings][:10]
         source = "mock" if isinstance(transcription, MockTranscriptionProvider) else (
