@@ -97,6 +97,26 @@ def _priority_positive(pattern: str, clause: str) -> bool:
     return False
 
 
+def _complete_heating_outage(clauses: list[str]) -> bool:
+    """Recognize bounded wording that states heating service is wholly unavailable."""
+    partial = any(re.search(
+        r"\briscaldamento\b[^.;!?]*\b(?:solo|parzialmente|in alcune|in una)\b",
+        clause,
+    ) for clause in clauses)
+    if partial:
+        return False
+    total_loss = (
+        r"mancanza di riscaldamento|senza riscaldamento|non c è riscaldamento"
+        r"|riscaldamento non funziona|riscaldamento (?:è )?completamente assente"
+    )
+    if any(_priority_positive(total_loss, clause) for clause in clauses):
+        return True
+    return (
+        any(_priority_positive(r"(?:siamo|sono) al freddo", clause) for clause in clauses)
+        and any(_priority_positive(r"riscaldamento|impianto", clause) for clause in clauses)
+    )
+
+
 def priority_fallback(text: str) -> Priority | None:
     clauses = _priority_clauses(text)
     danger = (
@@ -106,6 +126,7 @@ def priority_fallback(text: str) -> Priority | None:
         r"|cavi scoperti|scintille|(?:grave )?rischio elettrico"
         r"|rischio immediato(?: per (?:le )?(?:persone|cose|beni))?"
         r"|pericolo immediato|rischio per (?:le )?persone"
+        r"|pericolo per (?:la sicurezza delle |le )persone|emergenza (?:in corso|immediata)"
         r"|grave allagamento"
     )
     for clause in clauses:
@@ -116,6 +137,8 @@ def priority_fallback(text: str) -> Priority | None:
         if (_priority_positive(r"forte perdita|allagamento|acqua", clause)
                 and _priority_positive(r"danni immediati|rischio (?:di )?danni immediati", clause)):
             return Priority.URGENTE
+    if _complete_heating_outage(clauses):
+        return Priority.ALTA
     for clause in clauses:
         if (_priority_positive(r"ascensor[ei]|elevator[ei]", clause)
                 and (_priority_positive(r"bloccato|bloccati|fermo|fuori servizio", clause)
@@ -169,3 +192,74 @@ def priority_fallback(text: str) -> Priority | None:
     ) for clause in clauses):
         return Priority.PROGRAMMABILE
     return None
+
+
+def _unambiguous_blockage(clauses: list[str]) -> bool:
+    """Only downgrade URGENTE for a narrowly understood report.
+
+    Unknown residual wording may explain the provider's urgency. Absence of a
+    recognized danger keyword alone is not evidence that the report is safe.
+    """
+    blockage = (
+        r"(?:(?:l |il |gli )?(?:ascensor[ei]|elevator[ei]) (?:è |sono )?"
+        r"(?:bloccato|bloccati|fermo|fuori servizio|non riparte|non ripartono)"
+        r"(?: al (?:primo|secondo|terzo|quarto|quinto|[0-9]+) piano)?"
+        r"(?: e non (?:riparte|ripartono))?"
+        r"|interruzione totale(?: della (?:rete|corrente))?"
+        r"|blackout totale|servizio completamente interrotto"
+        r"|(?:riscaldamento|rete|internet) (?:è )?"
+        r"(?:completamente|totalmente) (?:assente|bloccato|inutilizzabile|interrotto)"
+        r"|(?:tutto l edificio|intero edificio|tutto il palazzo|intero palazzo) "
+        r"(?:è )?senza (?:riscaldamento|corrente|internet|rete))"
+    )
+    safety_denial = (
+        r"(?:non (?:ci sono|c è)|nessun[oa]?|senza|assenza di) "
+        r"(?:persone (?:intrappolate|bloccate)|pericolo|rischio per le persone"
+        r"|scintille(?: (?:né|e) cavi scoperti)?|incendio|fumo)"
+    )
+    return bool(clauses) and all(
+        re.fullmatch(blockage + "|" + safety_denial, clause)
+        for clause in clauses
+    )
+
+
+def _unambiguous_blockage_from_source(source_text: str) -> bool:
+    """Assess only the report after removing bounded, non-priority metadata."""
+    text = re.sub(
+        r"\b(?:telefono|tel|cellulare|cell)\s*:?\s*"
+        r"\+?\d[\d\s().-]{5,}\d",
+        " ",
+        source_text,
+        flags=re.IGNORECASE,
+    )
+    # This deliberately requires an email cue and one bounded token: it does not
+    # discard arbitrary prose merely because it contains punctuation.
+    text = re.sub(
+        r"\b(?:e-mail|email|mail)\b\s*(?:è\s*)?:?\s*"
+        r"[A-Za-z0-9][A-Za-z0-9._@-]{0,254}(?=\s*(?:[,;!?]|\.(?=\s|$)|$))",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+    # Address stripping can leave this grammatical lead-in as an empty clause.
+    text = re.sub(r"\b(?:il\s+)?guasto\s+è\s+in\b", " ", text, flags=re.IGNORECASE)
+    clauses = [clause for clause in _priority_clauses(text) if clause]
+    return _unambiguous_blockage(clauses)
+
+
+def reconcile_priority(source_text: str, provider_priority: Priority | None) -> Priority | None:
+    """Reconcile a validated proposal using only the original report/transcript."""
+    evidence = priority_fallback(source_text)
+    if evidence == Priority.URGENTE:
+        return Priority.URGENTE
+    if evidence == Priority.ALTA:
+        if provider_priority == Priority.URGENTE and _complete_heating_outage(
+            _priority_clauses(source_text)
+        ):
+            return Priority.ALTA
+        if provider_priority == Priority.URGENTE and not _unambiguous_blockage_from_source(source_text):
+            return provider_priority
+        return Priority.ALTA
+    if provider_priority is None:
+        return evidence
+    return provider_priority

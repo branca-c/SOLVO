@@ -3,7 +3,7 @@ from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from app.api.ai import get_ai_provider
-from app.domain.draft_classification import category_fallback, priority_fallback
+from app.domain.draft_classification import category_fallback, priority_fallback, reconcile_priority
 from app.models import Category
 from tests.test_ollama import install_http, response
 from app.services.ai.ollama import OllamaAIProvider
@@ -132,18 +132,14 @@ def test_conservative_priority_hierarchy(text, priority):
 
 
 @pytest.mark.parametrize('priority', ['PROGRAMMABILE', 'BASSA', 'MEDIA', 'ALTA', 'URGENTE'])
-def test_valid_ollama_priority_skips_priority_classifier(api, monkeypatch, priority):
+def test_valid_ollama_priority_preserved_without_stronger_evidence(api, monkeypatch, priority):
     client, _ = api
     install_http(monkeypatch, lambda request: response({'priority': priority}))
     client.app.dependency_overrides[get_ai_provider] = lambda: OllamaAIProvider(
         'http://localhost:11434', 'test-model', 60,
     )
 
-    def unexpected_fallback(text):
-        pytest.fail('A valid Ollama priority must skip the deterministic classifier')
-
-    monkeypatch.setattr('app.services.work_order_drafts.priority_fallback', unexpected_fallback)
-    result = client.post('/api/ai/work-order-draft', json={'text': 'Incendio nel locale'})
+    result = client.post('/api/ai/work-order-draft', json={'text': 'Rubinetto guasto'})
     assert result.status_code == 200
     assert result.json()['priority'] == priority
     assert not any('Priorità proposta tramite regole' in w for w in result.json()['warnings'])
@@ -153,7 +149,7 @@ def test_valid_ollama_priority_skips_priority_classifier(api, monkeypatch, prior
 def test_missing_ollama_priority_uses_original_report(api, monkeypatch, proposal):
     client, _ = api
     install_http(monkeypatch, lambda request: response({
-        **proposal, 'description': 'Manutenzione programmata.',
+        **proposal, 'description': 'Riscaldamento non funzionante.',
     }))
     client.app.dependency_overrides[get_ai_provider] = lambda: OllamaAIProvider(
         'http://localhost:11434', 'test-model', 60,
@@ -161,7 +157,7 @@ def test_missing_ollama_priority_uses_original_report(api, monkeypatch, proposal
     result = client.post('/api/ai/work-order-draft', json={'text': MARCO_REPORT})
     assert result.status_code == 200
     assert result.json()['priority'] == 'MEDIA'
-    assert result.json()['description'] == 'Manutenzione programmata.'
+    assert result.json()['description'] == 'Riscaldamento non funzionante.'
     assert any('Priorità proposta tramite regole' in w for w in result.json()['warnings'])
 
 
@@ -173,7 +169,9 @@ def test_ollama_fallback_preserves_valid_proposals_and_never_writes(api, monkeyp
     with Session(engine) as db:
         db.add(Category(id=89, name='ASCENSORE'))
         db.commit()
-    install_http(monkeypatch, lambda request: response({**proposal, 'description': 'Sintesi tecnica.'}))
+    install_http(monkeypatch, lambda request: response({
+        **proposal, 'description': "L'ascensore è bloccato al terzo piano e non riparte",
+    }))
     client.app.dependency_overrides[get_ai_provider] = lambda: OllamaAIProvider(
         'http://localhost:11434', 'test-model', 60
     )
@@ -194,11 +192,11 @@ def test_ollama_fallback_preserves_valid_proposals_and_never_writes(api, monkeyp
     valid = proposal.get('category_name') == 'Idraulico'
     assert draft['category_id'] == (2 if valid else 89)
     assert draft['category_name'] == ('Idraulico' if valid else 'ASCENSORE')
-    assert draft['priority'] == proposal.get('priority', 'ALTA')
-    assert draft['description'] == 'Sintesi tecnica.'
+    assert draft['priority'] == 'ALTA'
+    assert draft['description'] == "L'ascensore è bloccato al terzo piano e non riparte"
     assert set(statements) <= {'SELECT'}
     assert client.get('/api/work-orders').json() == []
-    assert any('deterministiche' in w for w in draft['warnings']) == (not valid or 'priority' not in proposal)
+    assert any('deterministiche' in w for w in draft['warnings'])
 
 
 @pytest.mark.parametrize('names,text', [
@@ -219,3 +217,130 @@ def test_fallback_requires_unique_configured_category(api, monkeypatch, names, t
     assert draft['category_id'] is None
     assert draft['category_name'] is None
     assert any('manual' in w for w in draft['warnings'])
+
+
+RECONCILIATION_CASES = [
+    ('Ascensore bloccato al terzo piano e non riparte', 'URGENTE', 'ALTA'),
+    ('Ascensore bloccato al terzo piano e non riparte', None, 'ALTA'),
+    ('Ascensore bloccato; una persona è intrappolata', 'URGENTE', 'URGENTE'),
+    ('Una persona è intrappolata', 'ALTA', 'URGENTE'),
+    ('Una persona è intrappolata', 'MEDIA', 'URGENTE'),
+    ('Una persona è intrappolata', None, 'URGENTE'),
+    ('Non ci sono persone intrappolate; ascensore bloccato', 'URGENTE', 'ALTA'),
+    ('Ascensore bloccato; incendio nel locale accanto', 'ALTA', 'URGENTE'),
+    ('Ascensore bloccato; rischio per le persone', 'MEDIA', 'URGENTE'),
+    ('Ascensore bloccato; emergenza in corso', 'ALTA', 'URGENTE'),
+    ('Ascensore bloccato; pericolo per la sicurezza delle persone', None, 'URGENTE'),
+    ('Ascensore bloccato; forse qualcuno è dentro', 'URGENTE', 'URGENTE'),
+    ('Ascensore bloccato; non sappiamo se ci siano persone dentro', 'URGENTE', 'URGENTE'),
+    ('Ascensore bloccato; si sentono grida dalla cabina', 'URGENTE', 'URGENTE'),
+    ('Ascensore bloccato; situazione da chiarire', 'URGENTE', 'URGENTE'),
+    ('Ascensore forse bloccato', 'URGENTE', 'URGENTE'),
+    ('Problema urgente poco chiaro', 'URGENTE', 'URGENTE'),
+    ('Blackout totale', 'URGENTE', 'ALTA'),
+    ('Ascensore bloccato', 'BASSA', 'ALTA'),
+    ('Rubinetto guasto', 'URGENTE', 'URGENTE'),
+    ('Rubinetto guasto', None, 'MEDIA'),
+    ('Informazioni generiche', None, None),
+    ('Ascensore bloccato; non ci sono scintille né cavi scoperti', 'URGENTE', 'ALTA'),
+]
+
+
+RUNTIME_AUDIO_TRANSCRIPT = (
+    "Sono Chiara Branca, telefono 328-6677-356, email "
+    "chiara.branca1991-gmail.com. Il guasto è in via Roma 20 a Palermo, "
+    "l'ascensore è bloccato al terzo piano e non riparte."
+)
+
+
+HEATING_OUTAGE_TRANSCRIPT = (
+    "mi chiamo Chiara Branca abito in Via delle Magnolie, 25 a Catania, vorrei "
+    "segnalare che da due giorni siamo al freddo, la temperatura è veramente bassa "
+    "e lo stabile è abitato da gente anziana, chiedo intervento di manutenzione "
+    "sull'impianto per mancanza di riscaldamento il prima possibile. per il "
+    "sopralluogo contattatemi pure al 3286677356, oppure inviate una mail a "
+    "chiara.branca1991@gmail.com. Grazie, saluti"
+)
+
+
+def test_complete_heating_outage_from_original_report_is_alta():
+    assert priority_fallback(HEATING_OUTAGE_TRANSCRIPT) == 'ALTA'
+    assert reconcile_priority(HEATING_OUTAGE_TRANSCRIPT, None) == 'ALTA'
+    assert reconcile_priority(HEATING_OUTAGE_TRANSCRIPT, 'URGENTE') == 'ALTA'
+
+
+@pytest.mark.parametrize('text', [
+    'Il riscaldamento non funziona in alcune stanze.',
+    'Fa freddo oggi.',
+    'Lo stabile è abitato da persone anziane.',
+])
+def test_partial_or_generic_heating_context_is_not_automatically_alta_or_urgente(text):
+    expected = 'MEDIA' if 'non funziona' in text else None
+    assert priority_fallback(text) == expected
+    assert reconcile_priority(text, None) == expected
+
+
+def test_explicit_immediate_danger_overrides_complete_heating_outage():
+    text = 'Mancanza di riscaldamento; pericolo immediato per le persone.'
+    assert priority_fallback(text) == 'URGENTE'
+    assert reconcile_priority(text, None) == 'URGENTE'
+
+
+@pytest.mark.parametrize('text,provider_priority,expected', RECONCILIATION_CASES)
+def test_priority_reconciliation(text, provider_priority, expected):
+    assert reconcile_priority(text, provider_priority) == expected
+
+
+def test_priority_reconciliation_ignores_only_bounded_runtime_contact_residue():
+    assert reconcile_priority(RUNTIME_AUDIO_TRANSCRIPT, 'URGENTE') == 'ALTA'
+
+
+def test_priority_reconciliation_keeps_provider_urgency_for_unrelated_ambiguous_clause():
+    text = (
+        "Ascensore bloccato al terzo piano e non riparte; "
+        "un rumore strano proviene dalla cabina."
+    )
+    assert reconcile_priority(text, 'URGENTE') == 'URGENTE'
+
+
+@pytest.mark.parametrize('text,provider_priority,expected', RECONCILIATION_CASES)
+def test_reconciliation_uses_source_identically_for_text_and_audio_without_writes(
+    api, monkeypatch, text, provider_priority, expected,
+):
+    from app.api.ai import get_transcription_provider
+
+    class Transcription:
+        def transcribe(self, audio, content_type):
+            return text
+
+    client, engine = api
+    install_http(monkeypatch, lambda request: response({
+        'priority': provider_priority, 'description': text,
+    }))
+    client.app.dependency_overrides[get_ai_provider] = lambda: OllamaAIProvider(
+        'http://localhost:11434', 'test-model', 60,
+    )
+    client.app.dependency_overrides[get_transcription_provider] = lambda: Transcription()
+    statements = []
+
+    def observe(connection, cursor, statement, parameters, context, executemany):
+        statements.append(statement.lstrip().split()[0].upper())
+
+    event.listen(engine, 'before_cursor_execute', observe)
+    try:
+        text_result = client.post('/api/ai/work-order-draft', json={'text': text})
+        audio_result = client.post('/api/ai/work-order-draft-audio', files={
+            'audio': ('sample.wav', b'audio', 'audio/wav'),
+        })
+    finally:
+        event.remove(engine, 'before_cursor_execute', observe)
+    assert text_result.status_code == audio_result.status_code == 200
+    drafts = [text_result.json(), audio_result.json()['draft']]
+    for draft in drafts:
+        assert draft['priority'] == expected
+        assert draft['description'] == text
+        assert any('Priorità proposta tramite regole' in w for w in draft['warnings']) == (
+            expected != provider_priority
+        )
+    assert statements and set(statements) == {'SELECT'}
+    assert client.get('/api/work-orders').json() == []

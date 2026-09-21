@@ -601,9 +601,9 @@ are part of this adapter; existing local Whisper work is preserved. PDF is uncha
 ## Hybrid draft classification
 
 Ollama remains the primary semantic extractor. After ExtractedWorkOrder validation
-and normal category resolution, build_draft fills only missing/unresolved category
-and missing priority using conservative deterministic rules on the original request
-or transcript. Valid AI proposals are never overwritten. Provider errors and invalid
+and normal category resolution, build_draft fills missing/unresolved categories
+and reconciles priority using pure domain rules on the original request or
+transcript. Valid category proposals are preserved. Provider errors and invalid
 output still fail explicitly; this is not a switch to the mock provider. The same
 post-validation rules can fill unresolved fields from other valid provider contracts.
 
@@ -616,8 +616,15 @@ competing signals even when a competing category is not configured. The proposal
 must match exactly one normalized configured database category; its canonical name
 and ID are returned. No unmatched request defaults to Altro.
 
-Priority fallback runs only for a missing/null validated AI priority and uses the
-original report, never the generated description. Valid AI priorities are preserved.
+Priority reconciliation uses the original report, never the generated description.
+Explicit immediate danger, human safety risk, trapped people or an emergency takes
+precedence over any provider priority and yields URGENTE. Complete service blockage
+without explicit danger yields ALTA. A provider URGENTE is lowered only for narrowly
+recognized, unambiguous blockage reports (including explicit safety denials);
+unknown additional wording preserves URGENTE because lexical silence cannot rule
+out danger. Otherwise a missing/null priority uses priority_fallback(), and other
+provider values are preserved. Every changed value, including a filled missing
+priority, receives an existing review warning. Text and audio share these rules.
 Rules evaluate URGENTE → ALTA → MEDIA → BASSA → PROGRAMMABILE. URGENTE requires
 explicit danger: trapped people, fire/smoke, gas leak/strong gas odor, exposed wires,
 sparks/electrical risk, grave flooding or water with explicit immediate damage.

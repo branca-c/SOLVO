@@ -1,9 +1,13 @@
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from app.api.ai import get_ai_provider, get_transcription_provider
+from app.db.base import Base
 from app.domain.email_addresses import audio_email_candidate, valid_email
+from app.models import Category
 from app.services.transcription import MockTranscriptionProvider
-from app.services.work_order_drafts import _grounded
+from app.services.work_order_drafts import _grounded, build_draft
 from tests.test_work_order_drafts import StubProvider
 from tests.test_ollama import install_http, response
 from app.services.ai.ollama import OllamaAIProvider
@@ -136,3 +140,25 @@ def test_domain_correction_warns_even_when_ai_already_correct(api):
     assert result.status_code == 200
     assert result.json()["draft"]["user_email"] == "chiara.branca1991@gmail.com"
     assert any("Email ricostruita" in w for w in result.json()["draft"]["warnings"])
+
+
+def test_runtime_audio_email_replacement_removes_only_obsolete_invalid_warning():
+    transcript = (
+        "Sono Chiara Branca, telefono 328-6677-356, email "
+        "chiara.branca1991-gmail.com. Il guasto è in via Roma 20 a Palermo, "
+        "l'ascensore è bloccato al terzo piano e non riparte."
+    )
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add(Category(id=1, name="Ascensore"))
+        db.commit()
+        draft = build_draft(db, transcript, StubProvider({
+            "user_email": "chiara.branca1991-gmail.com",
+            "priority": "URGENTE",
+            "description": "Ascensore bloccato al terzo piano e non riparte.",
+        }), audio=True)
+
+    assert draft.user_email == "chiara.branca1991@gmail.com"
+    assert any("Email ricostruita dalla trascrizione audio" in warning for warning in draft.warnings)
+    assert not any("Email non valida" in warning for warning in draft.warnings)

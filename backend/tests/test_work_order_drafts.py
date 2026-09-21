@@ -31,7 +31,7 @@ def test_mock_draft_extracts_explicit_details_and_resolves_database_category(api
     assert draft["category_name"] == "Idraulico"
     assert draft["category_id"] == 2
     assert draft["priority"] == "MEDIA"
-    assert draft["description"] == text
+    assert draft["description"] == "C'è una perdita dal tubo del bagno."
     assert client.post(URL, json={"text": text}).json() == draft
     assert client.get('/api/work-orders').json() == []
 

@@ -4,12 +4,18 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.domain.draft_classification import category_fallback, normalize, priority_fallback
+from app.domain.draft_classification import category_fallback, normalize, reconcile_priority
+from app.domain.description_grounding import (
+    description_contains_separate_details, description_is_grounded, source_grounded_description,
+)
 from app.domain.email_addresses import audio_email_candidate, email_grounded
 from app.models import Category
 from app.services.timing import timed
 from app.schemas.work_order_draft import ExtractedWorkOrder, WorkOrderDraft
 from app.services.ai.provider import AIProvider, AIProviderUnavailableError, InvalidAIOutputError
+
+
+INVALID_EMAIL_WARNING = "Email non valida: inseriscila o correggila prima di confermare."
 
 
 def _normalize(value: str) -> str:
@@ -52,10 +58,17 @@ def build_draft(db: Session, text: str, provider: AIProvider, *, audio: bool = F
             raise InvalidAIOutputError("La bozza restituita non è valida. Usa l'inserimento manuale.") from exc
 
         values = extracted.model_dump()
-        warnings = list(extracted.warnings)
+        provider_warnings = list(extracted.warnings)
+        warnings = list(provider_warnings)
         audio_email = audio_email_candidate(text) if audio else None
         if audio_email and values["user_email"] != audio_email:
             values["user_email"] = audio_email
+            # The schema warning describes the provider's discarded invalid value,
+            # which is no longer the value presented for review.
+            provider_warnings = [
+                warning for warning in provider_warnings if warning != INVALID_EMAIL_WARNING
+            ]
+            warnings = list(provider_warnings)
         if audio_email and (extracted.user_email != audio_email or not email_grounded(audio_email, text)):
             warnings.append("Email ricostruita dalla trascrizione audio: verifica prima di confermare.")
         # Even a later model provider must not invent contact/address/name values.
@@ -87,17 +100,25 @@ def build_draft(db: Session, text: str, provider: AIProvider, *, audio: bool = F
             warnings.append("La categoria proposta non corrisponde a una categoria univoca configurata. Selezionala manualmente.")
         else:
             warnings.append("Categoria non individuata: selezionala manualmente.")
-        if extracted.priority is None:
-            values["priority"] = priority_fallback(text)
-            if values["priority"] is not None:
-                warnings.append("Priorità proposta tramite regole deterministiche: verifica prima di confermare.")
-            else:
-                warnings.append("Priorità non individuata: selezionala manualmente.")
+        values["priority"] = reconcile_priority(text, extracted.priority)
+        if values["priority"] != extracted.priority:
+            warnings.append("Priorità proposta tramite regole deterministiche sul testo originale: verifica prima di confermare.")
+        elif values["priority"] is None:
+            warnings.append("Priorità non individuata: selezionala manualmente.")
         if any(values[field] is None for field in ("user_first_name", "user_last_name", "user_phone", "fault_address")):
             warnings.append("Completa i dati mancanti del richiedente e dell'indirizzo prima di confermare.")
-        values["description"] = extracted.description or ""
+        description = extracted.description or ""
+        values["description"] = (
+            description if not description or (
+                description_is_grounded(text, description)
+                and not description_contains_separate_details(description)
+            )
+            else source_grounded_description(text)
+        )
         if not values["description"]:
             warnings.append("Descrizione tecnica non individuata: completala prima di confermare.")
         # Keep authoritative review warnings visible even if the model supplied ten.
-        values["warnings"] = list(dict.fromkeys(warnings[len(extracted.warnings):] + extracted.warnings))[:10]
+        values["warnings"] = list(dict.fromkeys(
+            warnings[len(provider_warnings):] + provider_warnings
+        ))[:10]
         return WorkOrderDraft(**values, category_id=category_id)

@@ -214,7 +214,7 @@ def test_natural_mario_request_preserves_city_and_formatted_phone(ollama_api, mo
         "user_first_name": "Mario", "user_last_name": "Rossi",
         "user_phone": "3331234567", "fault_address": "Via Roma 20, Palermo",
         "category_name": "Ascensore", "priority": "ALTA",
-        "description": "Ascensore fermo al terzo piano e non funzionante.",
+        "description": "Ascensore fermo al terzo piano e non riparte.",
     }
     install_http(monkeypatch, lambda request: response(data))
     draft = client.post("/api/ai/work-order-draft", json={"text": text}).json()
@@ -236,7 +236,7 @@ def test_complete_fault_address_instructions_and_draft_retention(
     client, _ = ollama_api
     text = (f"Sono Chiara Bianchi, telefono 3331234567. Il guasto è in {location}. "
             "L'ascensore è bloccato al terzo piano e non riparte.")
-    description = "Ascensore bloccato al terzo piano e non funzionante."
+    description = "Ascensore bloccato al terzo piano e non riparte."
 
     def handler(request):
         body = json.loads(request.content)
@@ -324,7 +324,12 @@ def test_configured_keep_alive_and_timing_leave_api_response_unchanged(
         spoken = client.post('/api/ai/work-order-draft-audio', files={
             'audio': ('fault.wav', b'audio', 'audio/wav'),
         })
-    expected = {**RESULT, 'category_id': 73, 'warnings': []}
+    expected = {
+        **RESULT,
+        'category_id': 73,
+        'description': 'Il climatizzatore perde acqua e non raffredda.',
+        'warnings': [],
+    }
     assert typed.status_code == spoken.status_code == 200
     assert typed.json() == expected
     assert spoken.json() == {
