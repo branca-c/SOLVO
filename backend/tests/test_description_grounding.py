@@ -126,3 +126,18 @@ def test_provider_description_with_only_source_terms_is_preserved():
     description = "Il climatizzatore perde acqua."
 
     assert build_source_draft(source, description).description == description
+
+
+def test_accepted_grounded_description_is_still_privacy_cleaned():
+    source = (
+        "Buongiorno, sono Chiara Branca. Ci sono delle persone bloccate in ascensore. "
+        "Grazie."
+    )
+    description = (
+        "Buongiorno, sono Chiara Branca. Ci sono delle persone bloccate in ascensore. "
+        "Grazie."
+    )
+
+    assert build_source_draft(source, description).description == (
+        "Ci sono delle persone bloccate in ascensore."
+    )

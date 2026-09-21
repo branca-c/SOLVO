@@ -162,3 +162,55 @@ def test_runtime_audio_email_replacement_removes_only_obsolete_invalid_warning()
     assert draft.user_email == "chiara.branca1991@gmail.com"
     assert any("Email ricostruita dalla trascrizione audio" in warning for warning in draft.warnings)
     assert not any("Email non valida" in warning for warning in draft.warnings)
+
+
+REAL_AUDIO_TRANSCRIPT = (
+    "Buongiorno, sono Chiara Branca, vorrei segnalare un guasto urgentissimo. "
+    "Ci sono delle persone bloccate in ascensore, nello stabile di via Roma 25 a Palermo. "
+    "Il mio numero di telefono è 328 66 77 356. "
+    "La mia mail è chiara.branca1991.gmail.com. Intervenite al più presto. Grazie."
+)
+
+
+def test_real_audio_transcript_reconstructs_email_and_keeps_only_fault_description():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add(Category(id=1, name="Ascensore"))
+        db.commit()
+        draft = build_draft(db, REAL_AUDIO_TRANSCRIPT, StubProvider({
+            "user_first_name": "Chiara",
+            "user_last_name": "Branca",
+            "user_phone": "3286677356",
+            "user_email": "chiara.branca1991.gmail.com",
+            "fault_address": "Via Roma 25, Palermo",
+            "category_name": "Ascensore",
+            "priority": "URGENTE",
+            "description": REAL_AUDIO_TRANSCRIPT,
+        }), audio=True)
+
+    assert draft.user_first_name == "Chiara"
+    assert draft.user_last_name == "Branca"
+    assert draft.user_phone == "3286677356"
+    assert draft.user_email == "chiara.branca1991@gmail.com"
+    assert draft.fault_address == "Via Roma 25, Palermo"
+    assert draft.category_name == "Ascensore"
+    assert draft.priority == "URGENTE"
+    assert draft.description == "Ci sono delle persone bloccate in ascensore."
+    for excluded in ("chiara", "328", "gmail", "via roma", "buongiorno", "grazie"):
+        assert excluded not in draft.description.casefold()
+    assert any("Email ricostruita dalla trascrizione audio" in warning for warning in draft.warnings)
+    assert not any("Email non valida" in warning for warning in draft.warnings)
+
+
+def test_dotted_known_domain_recovery_requires_cue_and_unique_known_domain(monkeypatch):
+    from app.domain import email_addresses
+
+    assert audio_email_candidate("La mia mail è chiara.branca1991.gmail.com") == (
+        "chiara.branca1991@gmail.com"
+    )
+    assert audio_email_candidate("chiara.branca1991.gmail.com") is None
+    assert audio_email_candidate("email: chiara.azienda.example") is None
+
+    monkeypatch.setattr(email_addresses, "COMMON_EMAIL_DOMAINS", ("x.gmail.com", "gmail.com"))
+    assert audio_email_candidate("email: chiara.x.gmail.com") is None

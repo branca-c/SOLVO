@@ -36,20 +36,28 @@ def description_contains_separate_details(description: str) -> bool:
     )
 
 
-def source_grounded_description(source_text: str) -> str:
-    """Return an extractive, privacy-cleaned description from the original report."""
+def sanitize_description(text: str) -> str:
+    """Remove bounded non-fault material from a selected description."""
     # Structured fields are removed as a whole so their labels cannot become
     # misleading description fragments after the value has been stripped.
     text = re.sub(
-        r"\b(?:telefono|tel|cellulare|cell)\s*:?\s*"
-        r"\+?\d[\d\s().-]{5,}\d\s*[;,]?\s*",
+        r"(?:^|(?<=[.!?;]))\s*(?:buongiorno|ciao)\s*,?\s*",
         " ",
-        source_text,
+        text,
         flags=re.IGNORECASE,
     )
     text = re.sub(
-        r"\b(?:e-mail|email|mail)\s*:?\s*"
-        r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\s*[;,]?\s*",
+        r"\b(?:il\s+mio\s+(?:numero\s+di\s+)?telefono|telefono|tel|cellulare|cell)"
+        r"\s*(?::|è)?\s*"
+        r"\+?\d[\d\s().-]{5,}\d\s*[;,]?\s*",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"\b(?:la\s+mia\s+)?(?:e-mail|email|mail)\s*(?::|è)?\s*"
+        r"(?=[A-Za-z0-9._@-]*[.@_-])[A-Za-z0-9](?:[A-Za-z0-9._@-]{0,253}[A-Za-z0-9])?"
+        r"\s*[;,]?\s*",
         " ",
         text,
         flags=re.IGNORECASE,
@@ -85,15 +93,29 @@ def source_grounded_description(source_text: str) -> str:
         text,
         flags=re.IGNORECASE,
     )
+    text = re.sub(
+        r"\b(?:nello|nella)\s+stabile\s+di\s*(?=[,;:.!?]|$)",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
     text = re.sub(r"\b(?:in|a|presso)\s*(?=[,;:.!?]|$)", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\b(?:il\s+)?guasto\s+è\s+in\b", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\b(?:il\s+)?guasto\s+è\s*(?=[,;:.!?]|$)", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\b(?:vorrei\s+)?segnalare(?:\s+che)?\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bun\s+guasto\s+urgentissimo\b", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\bchiedo\s+intervento\s+di\s+manutenzione(?:\s+sull[’']impianto)?\b", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\bil prima possibile\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bintervenite\s+al\s+più\s+presto\b", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\b(?:grazie|saluti|cordiali saluti)\b", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"[,;]\s*(?=[.!?])", "", text)
     text = re.sub(r"\s*([,;:.!?])\s*", r"\1 ", text)
     text = re.sub(r"([,;:.!?])(?:\s*[,;:.!?])+", r"\1", text)
     text = re.sub(r"^[,;:.!?]+\s*", "", text).strip(" ,;:!?")
     return text[:1].upper() + text[1:] if text else ""
+
+
+def source_grounded_description(source_text: str) -> str:
+    """Return an extractive, privacy-cleaned description from the original report."""
+    return sanitize_description(source_text)

@@ -75,6 +75,13 @@ def _reconstruct(expression: str) -> str | None:
             choices = [value[:i] + "@" + value[i + 1:]
                        for i, char in enumerate(value) if char == "-"
                        and valid_email(value[:i] + "@" + value[i + 1:])]
+        if not choices:
+            choices = [
+                value[:-(len(domain) + 1)] + "@" + domain
+                for domain in COMMON_EMAIL_DOMAINS
+                if value.casefold().endswith("." + domain)
+                and valid_email(value[:-(len(domain) + 1)] + "@" + domain)
+            ]
     if len(choices) != 1:
         return None
     result = _canonical_domain(choices[0])
