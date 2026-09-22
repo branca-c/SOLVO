@@ -5,9 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.draft_classification import category_fallback, normalize, reconcile_priority
-from app.domain.description_grounding import (
-    description_contains_separate_details, description_is_grounded, sanitize_description,
-)
+from app.domain.description_grounding import source_grounded_description
 from app.domain.email_addresses import audio_email_candidate, email_grounded
 from app.models import Category
 from app.services.timing import timed
@@ -107,15 +105,7 @@ def build_draft(db: Session, text: str, provider: AIProvider, *, audio: bool = F
             warnings.append("Priorità non individuata: selezionala manualmente.")
         if any(values[field] is None for field in ("user_first_name", "user_last_name", "user_phone", "fault_address")):
             warnings.append("Completa i dati mancanti del richiedente e dell'indirizzo prima di confermare.")
-        description = extracted.description or ""
-        selected_description = (
-            description if not description or (
-                description_is_grounded(text, description)
-                and not description_contains_separate_details(description)
-            )
-            else text
-        )
-        values["description"] = sanitize_description(selected_description)
+        values["description"] = source_grounded_description(text)
         if not values["description"]:
             warnings.append("Descrizione tecnica non individuata: completala prima di confermare.")
         # Keep authoritative review warnings visible even if the model supplied ten.

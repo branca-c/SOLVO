@@ -53,6 +53,26 @@ def test_priority_signals(text, priority):
     assert priority_fallback(text) == priority
 
 
+@pytest.mark.parametrize('text', [
+    "Una persona è intrappolata nell'ascensore.",
+    "Ci sono persone intrappolate in ascensore.",
+    "Una persona è bloccata in ascensore.",
+    "Ci sono delle persone bloccate in ascensore.",
+])
+def test_explicit_human_entrapment_in_elevator_is_urgent(text):
+    assert priority_fallback(text) == 'URGENTE'
+
+
+def test_negated_human_entrapment_in_elevator_is_not_urgent():
+    assert priority_fallback("Non ci sono persone bloccate nell'ascensore.") != 'URGENTE'
+
+
+def test_human_entrapment_in_elevator_overrides_media_provider_priority():
+    text = "Ci sono delle persone bloccate in ascensore."
+
+    assert reconcile_priority(text, 'MEDIA') == 'URGENTE'
+
+
 MARCO_REPORT = (
     "Buongiorno mi chiamo Marco, vorrei segnalare riscaldamento non "
     "funzionante in Via Carducci 16 a Preganziol (TV), potete contattarmi al "
@@ -148,16 +168,14 @@ def test_valid_ollama_priority_preserved_without_stronger_evidence(api, monkeypa
 @pytest.mark.parametrize('proposal', [{}, {'priority': None}])
 def test_missing_ollama_priority_uses_original_report(api, monkeypatch, proposal):
     client, _ = api
-    install_http(monkeypatch, lambda request: response({
-        **proposal, 'description': 'Riscaldamento non funzionante.',
-    }))
+    install_http(monkeypatch, lambda request: response(proposal))
     client.app.dependency_overrides[get_ai_provider] = lambda: OllamaAIProvider(
         'http://localhost:11434', 'test-model', 60,
     )
     result = client.post('/api/ai/work-order-draft', json={'text': MARCO_REPORT})
     assert result.status_code == 200
     assert result.json()['priority'] == 'MEDIA'
-    assert result.json()['description'] == 'Riscaldamento non funzionante.'
+    assert result.json()['description'] == 'Riscaldamento non funzionante'
     assert any('Priorità proposta tramite regole' in w for w in result.json()['warnings'])
 
 
@@ -169,9 +187,7 @@ def test_ollama_fallback_preserves_valid_proposals_and_never_writes(api, monkeyp
     with Session(engine) as db:
         db.add(Category(id=89, name='ASCENSORE'))
         db.commit()
-    install_http(monkeypatch, lambda request: response({
-        **proposal, 'description': "L'ascensore è bloccato al terzo piano e non riparte",
-    }))
+    install_http(monkeypatch, lambda request: response(proposal))
     client.app.dependency_overrides[get_ai_provider] = lambda: OllamaAIProvider(
         'http://localhost:11434', 'test-model', 60
     )
@@ -314,9 +330,7 @@ def test_reconciliation_uses_source_identically_for_text_and_audio_without_write
             return text
 
     client, engine = api
-    install_http(monkeypatch, lambda request: response({
-        'priority': provider_priority, 'description': text,
-    }))
+    install_http(monkeypatch, lambda request: response({'priority': provider_priority}))
     client.app.dependency_overrides[get_ai_provider] = lambda: OllamaAIProvider(
         'http://localhost:11434', 'test-model', 60,
     )

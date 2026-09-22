@@ -25,7 +25,6 @@ class ExtractedWorkOrder(BaseModel):
     fault_address: Address | None = None
     category_name: Annotated[str, Field(min_length=1, max_length=100)] | None = None
     priority: Priority | None = None
-    description: Annotated[str, Field(max_length=10000)] | None = None
     warnings: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(
         default_factory=list, max_length=10
     )

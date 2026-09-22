@@ -21,7 +21,6 @@ RESULT = {
     "user_phone": "3471234567", "user_email": None,
     "fault_address": "Via Libertà 85", "category_name": "Climatizzazione",
     "priority": "MEDIA",
-    "description": "Perdita d'acqua dal climatizzatore e mancato raffreddamento.",
 }
 
 
@@ -62,9 +61,17 @@ def test_structured_schema_and_priority(monkeypatch, priority):
         assert body["model"] == "configured-model"
         assert body["stream"] is False
         assert body["format"]["additionalProperties"] is False
+        assert set(body["format"]["properties"]) == {
+            "user_first_name", "user_last_name", "user_phone", "user_email",
+            "fault_address", "category_name", "priority", "warnings",
+        }
+        assert "description" not in body["format"]["properties"]
         assert body["format"]["properties"]["category_name"]["anyOf"][0]["enum"] == ["Climatizzazione"]
         assert body["messages"][1]["content"] == TEXT
-        assert "URGENTE" in body["messages"][0]["content"]
+        prompt = body["messages"][0]["content"].casefold()
+        assert "urgente" in prompt
+        assert "description" not in prompt
+        assert "sintesi tecnica" not in prompt
         return response({**RESULT, "priority": priority})
     install_http(monkeypatch, handler)
     result = create_provider("ollama", model="configured-model").extract(TEXT, ["Climatizzazione"])
@@ -74,11 +81,11 @@ def test_structured_schema_and_priority(monkeypatch, priority):
             assert result[key] == value
 
 
-@pytest.mark.parametrize("data", [{}, {"user_first_name": None, "description": None}])
+@pytest.mark.parametrize("data", [{}, {"user_first_name": None}])
 def test_missing_values_remain_null(monkeypatch, data):
     install_http(monkeypatch, lambda request: response(data))
     result = create_provider("ollama", model="test").extract("Ciao", [])
-    for key in ("user_first_name", "user_last_name", "user_phone", "fault_address", "description", "priority"):
+    for key in ("user_first_name", "user_last_name", "user_phone", "fault_address", "priority"):
         assert result[key] is None
 
 
@@ -96,12 +103,9 @@ def test_invalid_output_controlled(monkeypatch, reply):
         create_provider("ollama", model="test").extract(TEXT, [])
 
 
-@pytest.mark.parametrize("field", ["user_first_name", "user_last_name", "user_phone", "user_email", "fault_address"])
-def test_contact_repetition_rejected_without_text_mangling(monkeypatch, field):
-    data = {**RESULT, "user_email": "anna@example.com"}
-    data["description"] = f"{data[field]} segnala perdita dal climatizzatore."
-    install_http(monkeypatch, lambda request: response(data))
-    with pytest.raises(InvalidAIOutputError, match="ripete"):
+def test_unexpected_description_is_rejected(monkeypatch):
+    install_http(monkeypatch, lambda request: response({**RESULT, "description": "Riassunto non previsto."}))
+    with pytest.raises(InvalidAIOutputError):
         create_provider("ollama", model="test").extract(TEXT, [])
 
 
@@ -174,7 +178,7 @@ def test_backend_missing_and_unresolved_warnings(ollama_api, monkeypatch, result
     assert draft["category_id"] is not None
     assert draft["warnings"]
     if not result:
-        assert draft["description"] == ""
+        assert draft["description"] == "Il climatizzatore perde acqua e non raffredda."
         assert draft["user_phone"] is None
 
 
@@ -214,7 +218,6 @@ def test_natural_mario_request_preserves_city_and_formatted_phone(ollama_api, mo
         "user_first_name": "Mario", "user_last_name": "Rossi",
         "user_phone": "3331234567", "fault_address": "Via Roma 20, Palermo",
         "category_name": "Ascensore", "priority": "ALTA",
-        "description": "Ascensore fermo al terzo piano e non riparte.",
     }
     install_http(monkeypatch, lambda request: response(data))
     draft = client.post("/api/ai/work-order-draft", json={"text": text}).json()
@@ -236,7 +239,6 @@ def test_complete_fault_address_instructions_and_draft_retention(
     client, _ = ollama_api
     text = (f"Sono Chiara Bianchi, telefono 3331234567. Il guasto è in {location}. "
             "L'ascensore è bloccato al terzo piano e non riparte.")
-    description = "Ascensore bloccato al terzo piano e non riparte."
 
     def handler(request):
         body = json.loads(request.content)
@@ -247,14 +249,14 @@ def test_complete_fault_address_instructions_and_draft_retention(
         assert "non dedurre Palermo dal contesto" in prompt
         assert "non geocodificare e non usare servizi esterni" in prompt
         assert "telefono o email del richiedente in fault_address" in prompt
-        assert "description deve essere una breve sintesi tecnica del solo guasto/intervento" in prompt
+        assert "description" not in prompt.casefold()
+        assert "sintesi tecnica" not in prompt.casefold()
         if "90011" not in location:
             assert f"'{location}' -> '{address}'" in prompt
         assert body["messages"][1]["content"] == text
         return response({
             "user_first_name": "Chiara", "user_last_name": "Bianchi",
             "user_phone": "3331234567", "fault_address": address,
-            "description": description,
         })
 
     install_http(monkeypatch, handler)
@@ -262,7 +264,6 @@ def test_complete_fault_address_instructions_and_draft_retention(
     assert result.status_code == 200
     draft = result.json()
     assert draft["fault_address"] == address
-    assert draft["description"] == description
     assert draft["user_first_name"] == "Chiara"
     assert draft["user_phone"] == "3331234567"
     if location == "via Dante 10":
@@ -273,7 +274,6 @@ def test_fault_address_with_invented_city_is_excluded(ollama_api, monkeypatch):
     client, _ = ollama_api
     install_http(monkeypatch, lambda request: response({
         "fault_address": "Via Dante 10, Palermo",
-        "description": "Ascensore bloccato al terzo piano.",
     }))
     result = client.post("/api/ai/work-order-draft", json={
         "text": "Il guasto è in via Dante 10. L'ascensore è bloccato al terzo piano.",
@@ -288,7 +288,6 @@ def test_model_warnings_do_not_hide_missing_required_fields(ollama_api, monkeypa
     install_http(monkeypatch, lambda request: response({"warnings": [f"Avviso {i}" for i in range(10)]}))
     draft = client.post("/api/ai/work-order-draft", json={"text": TEXT}).json()
     assert any("richiedente" in warning for warning in draft["warnings"])
-    assert any("Descrizione" in warning for warning in draft["warnings"])
 
 
 @pytest.mark.parametrize('keep_alive', ['30m', '2m', '0', '-1'])

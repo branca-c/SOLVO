@@ -1,7 +1,6 @@
 """Local structured extraction only: no tools, persistence or workflow access."""
 import json
 import math
-import re
 from urllib.parse import urlsplit
 
 import httpx
@@ -33,12 +32,6 @@ Esempi di fault_address:
 Non inventare città, provincia o CAP; non dedurre Palermo dal contesto
 applicativo, non geocodificare e non usare servizi esterni. Non inserire nome,
 cognome, telefono o email del richiedente in fault_address.
-description deve essere una breve sintesi tecnica del solo guasto/intervento:
-escludi nome, cognome, telefono, email e indirizzo. Non copiare la segnalazione.
-Esempio: 'Sono Anna Bianchi, telefono 3471234567, in via Libertà 85.
-Il climatizzatore perde acqua e non raffredda.' -> description:
-"Perdita d'acqua dal climatizzatore e mancato raffreddamento."
-Se non c'è un problema/intervento descrivibile, description è null.
 category_name può essere solo uno dei nomi configurati forniti sotto; se ambiguo
 o non riconoscibile usa null e segnala l'incertezza in warnings. Mai generare ID.
 priority può essere solo PROGRAMMABILE (intervento pianificabile), BASSA (disagio
@@ -106,10 +99,4 @@ class OllamaAIProvider:
             extracted = ExtractedWorkOrder.model_validate_json(content)
         except (ValueError, TypeError, KeyError, ValidationError) as exc:
             raise InvalidAIOutputError("Risposta Ollama non valida: JSON malformato o dati non conformi alla bozza SOLVO. Riprova o usa l'inserimento manuale.") from exc
-        # Reject rather than mangle a contaminated summary. The user can retry/edit.
-        description = extracted.description or ""
-        for field in ("user_first_name", "user_last_name", "user_phone", "user_email", "fault_address"):
-            value = getattr(extracted, field)
-            if value and re.search(r"(?<!\w)" + re.escape(value) + r"(?!\w)", description, re.I):
-                raise InvalidAIOutputError("La descrizione Ollama ripete dati del richiedente o l'indirizzo. Riprova o inserisci una sintesi tecnica manualmente.")
         return extracted.model_dump()

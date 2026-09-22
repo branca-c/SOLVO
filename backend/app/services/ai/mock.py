@@ -97,6 +97,5 @@ class MockAIProvider:
             "fault_address": address,
             "category_name": proposed_category,
             "priority": _priority(text),
-            "description": text,
             "warnings": warnings,
         }

@@ -145,9 +145,40 @@ class StubProvider:
         return self.result
 
 
+def test_real_audio_start_address_entrapment_uses_source_description_and_urgent_priority(api):
+    transcript = (
+        "Sono Chiara Branca, vorrei segnalare un guasto urgentissimo. "
+        "Nello stabile di via Roma 25 a Palermo ci sono delle persone bloccate in ascensore. "
+        "Il mio numero di telefono è 328 66 77 356. "
+        "La mia mail è chiara.branca1991-gmail.com. "
+        "Vi prego di intervenire al più presto. Grazie."
+    )
+    client, _ = api
+    client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({'priority': 'MEDIA'})
+
+    response = client.post(URL, json={'text': transcript})
+
+    assert response.status_code == 200
+    assert response.json()['description'] == 'Ci sono delle persone bloccate in ascensore.'
+    assert response.json()['priority'] == 'URGENTE'
+
+
+def test_empty_source_extraction_stays_empty_and_keeps_description_warning(api):
+    client, _ = api
+    client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({})
+
+    result = client.post(URL, json={
+        "text": "Buongiorno, sono Mario Rossi. Telefono: 333 123 4567. Grazie, saluti.",
+    })
+
+    assert result.status_code == 200
+    assert result.json()["description"] == ""
+    assert "Descrizione tecnica non individuata: completala prima di confermare." in result.json()["warnings"]
+
+
 @pytest.mark.parametrize('output', [
     {'priority': 'CRITICA'}, {'category_id': 2}, {'status': 'CHIUSO'}, 'not a structured object',
-    {'user_phone': ['123456']},
+    {'user_phone': ['123456']}, {'description': 'Riassunto non previsto'},
 ])
 def test_provider_output_is_validated_before_returning(api, output):
     client, _ = api
@@ -159,12 +190,12 @@ def test_provider_output_is_validated_before_returning(api, output):
 def test_fallback_description_and_ungrounded_details_are_removed(api):
     client, _ = api
     client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({
-        'description': '', 'user_first_name': 'Inventato', 'user_phone': '999999999',
+        'user_first_name': 'Inventato', 'user_phone': '999999999',
         'user_email': 'inventato@example.com', 'fault_address': 'Via inventata 99',
         'category_name': '  idraulico  ',
     })
     draft = client.post(URL, json={'text': 'Perdita dal tubo'}).json()
-    assert draft['description'] == ''
+    assert draft['description'] == 'Perdita dal tubo'
     assert draft['category_id'] == 2
     for field in ('user_first_name', 'user_phone', 'user_email', 'fault_address'):
         assert draft[field] is None

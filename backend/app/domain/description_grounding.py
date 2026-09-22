@@ -75,20 +75,42 @@ def sanitize_description(text: str) -> str:
         text,
         flags=re.IGNORECASE,
     )
-    text = re.sub(r"(?:per il sopralluogo\s+)?contattatemi\b[^.?!]*", " ", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"\b(?:potete\s+)?chiamarmi\s+al\s*\+?\d[\d\s().-]{5,}\d\s*[;,]?\s*",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"\b(?:potete\s+)?contattarmi\s+al\s+(?:cel(?:lulare)?|tel(?:efono)?)\.?\s*"
+        r"\+?\d[\d\s().-]{5,}\d(?:\s+oppure\s+via\s+(?:e-?mail|mail)"
+        r"(?:\s+a(?:\s+[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})?)?)?\s*[;,]?\s*",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(?:per il sopralluogo\s+)?(?:contattatemi|(?:potete\s+)?contattarmi)\b[^.?!]*",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
     text = re.sub(
         r"(?:^|(?<=[.!?;]))\s*(?:mi chiamo|sono)\s+"
         r"[A-ZÀ-Ý][a-zà-ÿ'’-]+(?:\s+[A-ZÀ-Ý][a-zà-ÿ'’-]+){0,2}"
-        r"(?=\s*(?:[,.;]|\b(?:abito|risiedo|telefono|email|e-mail)\b))",
+        r"(?:\s+e\s+vorrei\s+segnalare\b|"
+        r"(?=\s*(?:[,.;]|\b(?:abito|risiedo|telefono|email|e-mail)\b)))",
         " ",
         text,
         flags=re.IGNORECASE,
     )
     text = re.sub(r"\b(?:abito|risiedo)\s+in\b", " ", text, flags=re.IGNORECASE)
     text = re.sub(
+        r"(?:\b(?:nello|nella)\s+stabile\s+di\s+)?"
         r"\b(?:via|viale|corso|piazza|vicolo|largo)\s+[^.;!?\n]*?\d+[A-Za-z]?"
-        r"(?:\s+(?:a|in)\s+[A-ZÀ-Ý][\wà-ÿ'’-]*(?:\s+[A-ZÀ-Ý][\wà-ÿ'’-]*){0,2})?"
-        r"(?:,\s*[A-ZÀ-Ý][\wà-ÿ'’-]*(?:\s+[A-ZÀ-Ý][\wà-ÿ'’-]*){0,2})?",
+        r"(?:\s+(?:a|in)\s+(?-i:[A-ZÀ-Ý][\wà-ÿ'’-]*(?:\s+[A-ZÀ-Ý][\wà-ÿ'’-]*){0,2}))?"
+        r"(?:,\s*(?-i:[A-ZÀ-Ý][\wà-ÿ'’-]*(?:\s+[A-ZÀ-Ý][\wà-ÿ'’-]*){0,2}))?"
+        r"(?:\s*\([A-Za-z]{2}\))?",
         " ",
         text,
         flags=re.IGNORECASE,
@@ -104,9 +126,10 @@ def sanitize_description(text: str) -> str:
     text = re.sub(r"\b(?:il\s+)?guasto\s+è\s*(?=[,;:.!?]|$)", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\b(?:vorrei\s+)?segnalare(?:\s+che)?\b", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\bun\s+guasto\s+urgentissimo\b", " ", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bchiedo\s+intervento\s+di\s+manutenzione(?:\s+sull[’']impianto)?\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bchiedo\s+(?:un\s+)?intervento(?:\s+di\s+manutenzione)?(?:\s+sull[’']impianto)?\b", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\bil prima possibile\b", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\bintervenite\s+al\s+più\s+presto\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bvi\s+prego\s+di\s+intervenire\s+al\s+più\s+presto\b", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\b(?:grazie|saluti|cordiali saluti)\b", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"[,;]\s*(?=[.!?])", "", text)

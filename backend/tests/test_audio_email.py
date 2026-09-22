@@ -96,7 +96,7 @@ def test_audio_reconciles_after_real_ollama_validation(api, monkeypatch, transcr
     def handler(request):
         import json
         assert json.loads(request.content)["messages"][1]["content"] == transcript
-        return response({"user_email": "chiara.branca1991-gmail.com", "user_phone": "3331234567", "description": "Perdita dal tubo"})
+        return response({"user_email": "chiara.branca1991-gmail.com", "user_phone": "3331234567"})
     install_http(monkeypatch, handler)
     client.app.dependency_overrides[get_ai_provider] = lambda: OllamaAIProvider("http://localhost:11434", "unchanged", 30)
     client.app.dependency_overrides[get_transcription_provider] = lambda: MockTranscriptionProvider(transcript)
@@ -119,7 +119,7 @@ def test_audio_reconciles_after_real_ollama_validation(api, monkeypatch, transcr
 ])
 def test_text_never_uses_audio_repair(api, text, email, expected):
     client, _ = api
-    client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({"user_email": email, "description": "Perdita"})
+    client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({"user_email": email})
     result = client.post("/api/ai/work-order-draft", json={"text": text})
     assert result.status_code == 200
     assert result.json()["user_email"] == expected
@@ -156,7 +156,6 @@ def test_runtime_audio_email_replacement_removes_only_obsolete_invalid_warning()
         draft = build_draft(db, transcript, StubProvider({
             "user_email": "chiara.branca1991-gmail.com",
             "priority": "URGENTE",
-            "description": "Ascensore bloccato al terzo piano e non riparte.",
         }), audio=True)
 
     assert draft.user_email == "chiara.branca1991@gmail.com"
@@ -186,7 +185,6 @@ def test_real_audio_transcript_reconstructs_email_and_keeps_only_fault_descripti
             "fault_address": "Via Roma 25, Palermo",
             "category_name": "Ascensore",
             "priority": "URGENTE",
-            "description": REAL_AUDIO_TRANSCRIPT,
         }), audio=True)
 
     assert draft.user_first_name == "Chiara"

@@ -52,9 +52,10 @@ def _priority_clauses(text: str) -> list[str]:
     """Use report evidence, excluding recognizable contact/location spans."""
     # Also remove a conventionally capitalized locality after an address comma.
     text = re.sub(
-        r"\b(?i:via|viale|corso|piazza|vicolo|largo)\s+[^,.;!?:\n]+"
-        r"(?:,\s*[A-ZÀ-Ý][a-zà-ÿ]+(?:\s+[A-ZÀ-Ý][a-zà-ÿ]+){0,2}"
-        r"(?:\s*\([A-Z]{2}\)|,\s*[A-Z]{2}\b)?(?=\s*[,.;!?]|\s*$))?",
+        r"\b(?i:via|viale|corso|piazza|vicolo|largo)\s+[^.;!?:\n]*?\d+[A-Za-z]?"
+        r"(?:\s+(?i:a|in)\s+(?-i:[A-ZÀ-Ý][\wà-ÿ'’-]*(?:\s+[A-ZÀ-Ý][\wà-ÿ'’-]*){0,2}))?"
+        r"(?:,\s*(?-i:[A-ZÀ-Ý][\wà-ÿ'’-]*(?:\s+[A-ZÀ-Ý][\wà-ÿ'’-]*){0,2}))?"
+        r"(?:\s*\([A-Za-z]{2}\))?",
         " ", text,
     )
     text = re.sub(
@@ -117,7 +118,22 @@ def _complete_heating_outage(clauses: list[str]) -> bool:
     )
 
 
+def _explicit_elevator_entrapment(text: str) -> bool:
+    """Recognize a non-negated human entrapment statement before metadata removal."""
+    entrapment = (
+        r"(?:persona|persone|qualcuno)(?:\s+(?:è|sono))?\s+"
+        r"(?:bloccata|bloccate|bloccato|bloccati|intrappolata|intrappolate|intrappolato|intrappolati)"
+    )
+    return any(
+        _priority_positive(entrapment, clause)
+        and _priority_positive(r"ascensor[ei]", clause)
+        for clause in _clauses(text)
+    )
+
+
 def priority_fallback(text: str) -> Priority | None:
+    if _explicit_elevator_entrapment(text):
+        return Priority.URGENTE
     clauses = _priority_clauses(text)
     danger = (
         r"(?:persona|persone|qualcuno) (?:è |sono )?(?:bloccata|bloccate|bloccato|bloccati|intrappolata|intrappolate|intrappolato|intrappolati)"
