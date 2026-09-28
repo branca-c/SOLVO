@@ -24,6 +24,9 @@ def get_ai_provider(settings: Annotated[Settings, Depends(get_settings)]) -> AIP
             settings.ai_provider, base_url=settings.ollama_base_url,
             model=settings.ollama_model, timeout=settings.ollama_timeout_seconds,
             keep_alive=settings.ollama_keep_alive,
+            groq_api_key=settings.groq_api_key.get_secret_value(),
+            groq_base_url=settings.groq_base_url, groq_model=settings.groq_model,
+            groq_timeout=settings.groq_timeout_seconds,
         )
     except AIProviderUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

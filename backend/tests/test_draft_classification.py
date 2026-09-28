@@ -82,6 +82,34 @@ def test_provider_urgency_without_deterministic_danger_is_not_retained(text):
     assert reconcile_priority(text, "URGENTE") != "URGENTE"
 
 
+@pytest.mark.parametrize(('text', 'expected'), [
+    ('Problemi di rete al PC del professor Pellitteri', 'MEDIA'),
+    ('Blackout in via delle Alpi 45', 'MEDIA'),
+    ("Blackout in tutto l'edificio", 'ALTA'),
+    ('Ascensore fermo senza persone a bordo', 'ALTA'),
+    ('Persone bloccate in ascensore', 'URGENTE'),
+    ('Connessione intermittente ma il PC riesce comunque a lavorare', 'BASSA'),
+    ('Controllo programmato del climatizzatore', 'PROGRAMMABILE'),
+])
+def test_priority_hierarchy_for_active_faults_and_planned_work(text, expected):
+    assert reconcile_priority(text, None) == expected
+
+
+def test_provider_null_and_unproven_urgency_finalize_as_media_for_ordinary_fault():
+    text = 'Problemi di rete al PC del professor Pellitteri'
+    assert reconcile_priority(text, None) == 'MEDIA'
+    assert reconcile_priority(text, 'URGENTE') == 'MEDIA'
+
+
+@pytest.mark.parametrize('text', [
+    'Ciao, vorrei informazioni',
+    'Rischi per le persone nel locale',
+    'Segnalazione da classificare',
+])
+def test_non_fault_text_keeps_priority_null(text):
+    assert reconcile_priority(text, None) is None
+
+
 MARCO_REPORT = (
     "Buongiorno mi chiamo Marco, vorrei segnalare riscaldamento non "
     "funzionante in Via Carducci 16 a Preganziol (TV), potete contattarmi al "
@@ -98,7 +126,7 @@ MARCO_REPORT = (
     ('internet completamente assente', 'ALTA'),
     ('rete completamente assente', 'ALTA'),
     ('blackout totale', 'ALTA'),
-    ('blackout', None),
+    ('blackout', 'MEDIA'),
     ('riscaldamento fuori servizio', 'MEDIA'),
     ('ascensore bloccato e non riparte', 'ALTA'),
     ("persona bloccata nell'ascensore", 'URGENTE'),
@@ -261,7 +289,7 @@ RECONCILIATION_CASES = [
     ('Ascensore bloccato; si sentono grida dalla cabina', 'URGENTE', 'ALTA'),
     ('Ascensore bloccato; situazione da chiarire', 'URGENTE', 'ALTA'),
     ('Ascensore forse bloccato', 'URGENTE', 'ALTA'),
-    ('Problema urgente poco chiaro', 'URGENTE', None),
+    ('Problema urgente poco chiaro', 'URGENTE', 'MEDIA'),
     ('Blackout totale', 'URGENTE', 'ALTA'),
     ('Ascensore bloccato', 'BASSA', 'ALTA'),
     ('Rubinetto guasto', 'URGENTE', 'MEDIA'),

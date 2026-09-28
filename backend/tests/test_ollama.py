@@ -94,6 +94,27 @@ def test_fault_quote_selection_accepts_bounded_fault_quotes():
         ])
 
 
+def test_extract_draft_keeps_ollama_structured_and_quote_calls(monkeypatch):
+    calls = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        calls.append(body)
+        if "fault_quotes" in body["format"]["properties"]:
+            return response({"fault_quotes": FAULT_QUOTES})
+        return response(RESULT)
+
+    install_http(monkeypatch, handler)
+    extraction = create_provider("ollama", model="test").extract_draft(
+        TEXT, ["Climatizzazione"], SEGMENTS,
+    )
+
+    assert len(calls) == 2
+    assert extraction.structured == {**RESULT, "warnings": []}
+    assert extraction.fault_quotes == {"fault_quotes": FAULT_QUOTES}
+    assert extraction.description is None
+
+
 @pytest.mark.parametrize(("source", "expected_category"), REAL_PROMPT_CASES)
 def test_prompt_prioritizes_scalar_extraction_before_exact_quote_selection(
     monkeypatch, source, expected_category,

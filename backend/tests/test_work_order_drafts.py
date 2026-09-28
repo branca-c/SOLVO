@@ -8,6 +8,7 @@ from app.domain.description_grounding import segment_source
 from app.models import Category, WorkOrder, WorkOrderHistory
 from app.schemas.work_order_draft import WorkOrderDraft
 from app.services.ai.mock import MockAIProvider
+from app.services.ai.provider import DraftExtraction
 from tests.test_work_orders_api import create
 
 URL = "/api/ai/work-order-draft"
@@ -144,15 +145,18 @@ class StubProvider:
         self.result = result
         self.calls = []
 
-    def extract_structured(self, text, categories):
-        self.calls.append(("structured", text, categories))
+    def extract_draft(self, text, categories, segments):
+        self.calls.append(("draft", text, categories, segments))
         if not isinstance(self.result, dict):
-            return self.result
-        return {key: value for key, value in self.result.items() if key != "fault_quotes"}
-
-    def select_fault_quotes(self, segments):
-        self.calls.append(("quotes", segments))
-        return {"fault_quotes": self.result.get("fault_quotes", [])}
+            return DraftExtraction(structured=self.result)
+        return DraftExtraction(
+            structured={
+                key: value for key, value in self.result.items()
+                if key not in {"description", "fault_quotes"}
+            },
+            description=self.result.get("description") if "description" in self.result else None,
+            fault_quotes={"fault_quotes": self.result.get("fault_quotes", [])},
+        )
 
 
 def test_mock_provider_selects_only_safe_server_issued_quotes():
@@ -179,7 +183,7 @@ def test_draft_passes_source_segments_without_exposing_quotes(api):
     response = client.post(URL, json={"text": text})
 
     assert response.status_code == 200
-    assert [segment.id for segment in provider.calls[1][1]] == ["S1", "S2"]
+    assert [segment.id for segment in provider.calls[0][3]] == ["S1", "S2"]
     assert response.json()["description"] == "Il cancello non si apre"
     assert "fault_quotes" not in response.json()
 
@@ -386,7 +390,7 @@ def test_empty_source_extraction_stays_empty_and_keeps_description_warning(api):
 
 @pytest.mark.parametrize('output', [
     {'priority': 'CRITICA'}, {'category_id': 2}, {'status': 'CHIUSO'}, 'not a structured object',
-    {'user_phone': ['123456']}, {'description': 'Riassunto non previsto'},
+    {'user_phone': ['123456']},
 ])
 def test_provider_output_is_validated_before_returning(api, output):
     client, _ = api
@@ -422,10 +426,10 @@ def test_unsupported_provider_returns_503_without_aws_or_silent_fallback(api, mo
 def test_provider_failure_is_recoverable_and_does_not_expose_details(api, monkeypatch):
     client, _ = api
 
-    def fail(self, text, categories):
+    def fail(self, text, categories, segments):
         raise RuntimeError('provider secret technical details')
 
-    monkeypatch.setattr(MockAIProvider, 'extract_structured', fail)
+    monkeypatch.setattr(MockAIProvider, 'extract_draft', fail)
     response = client.post(URL, json={'text': 'Guasto'})
     assert response.status_code == 503
     assert 'secret' not in response.text

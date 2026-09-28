@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     ollama_model: str = ""
     ollama_timeout_seconds: float = 60
     ollama_keep_alive: str = DEFAULT_OLLAMA_KEEP_ALIVE
+    groq_api_key: SecretStr = SecretStr("")
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_model: str = "openai/gpt-oss-120b"
+    groq_timeout_seconds: float = 60
     transcription_provider: str = "mock"
     transcription_mock_text: str = "Perdita di acqua dal tubo del bagno."
     whisper_model_size: str = "small"

@@ -139,6 +139,16 @@ def _explicit_elevator_entrapment(text: str) -> bool:
     )
 
 
+def is_active_fault_report(source_text: str) -> bool:
+    """Recognize a concrete, non-negated technical fault without inferring one."""
+    active_fault = (
+        r"guast[oaie]|malfunzionament[oi]|problem[ai]|black ?out|perdita|gocciola"
+        r"|non funziona|non raffredda|non si apre|non si chiude|connession[ei]"
+        r"|interruzione|disservizio"
+    )
+    return any(_priority_positive(active_fault, clause) for clause in _priority_clauses(source_text))
+
+
 def priority_fallback(text: str) -> Priority | None:
     if _explicit_elevator_entrapment(text):
         return Priority.URGENTE
@@ -170,6 +180,9 @@ def priority_fallback(text: str) -> Priority | None:
             return Priority.ALTA
         if _priority_positive(r"interruzione totale|blackout totale|servizio completamente interrotto", clause):
             return Priority.ALTA
+        if (_priority_positive(r"black ?out", clause)
+                and _priority_positive(r"tutto l edificio|intero edificio|tutto il palazzo|intero palazzo", clause)):
+            return Priority.ALTA
         if (re.search(r"\b(?:riscaldamento|rete|internet)\b", clause)
                 and _priority_positive(r"(?:completamente|totalmente) (?:assente|bloccato|inutilizzabile|interrotto)", clause)):
             return Priority.ALTA
@@ -190,8 +203,17 @@ def priority_fallback(text: str) -> Priority | None:
     usable_defect = (
         r"(?:piccolo|lieve|minimo) (?:difetto|deterioramento)|componente (?:allentato|non critico)"
     )
-    usable = r"(?:ancora |comunque )?(?:utilizzabile|usabile)|funziona ancora|ancora funzionante"
+    usable = (
+        r"(?:ancora |comunque )?(?:utilizzabile|usabile)|funziona ancora|ancora funzionante"
+        r"|continua a funzionare|riesce(?: ancora| comunque)? a lavorare"
+    )
     still_usable = any(_priority_positive(usable, clause) for clause in clauses)
+    intermittent_usable = still_usable and any(
+        _priority_positive(r"intermittente|a intermittenza", clause)
+        for clause in clauses
+    )
+    if intermittent_usable:
+        return Priority.BASSA
     minor_clauses = [
         _priority_positive(minor + "|" + cosmetic, clause)
         or (_priority_positive(usable_defect, clause) and still_usable)
@@ -211,10 +233,12 @@ def priority_fallback(text: str) -> Priority | None:
     if any(minor_clauses):
         return Priority.BASSA
     if any(_priority_positive(
-        r"controllo periodico|manutenzione (?:programmata|preventiva)|intervento pianificato"
+        r"controllo (?:periodico|programmato)|manutenzione (?:programmata|preventiva)|intervento pianificato"
         r"|sostituzione preventiva|verniciatura|regolazione non urgente|programmabile", clause,
     ) for clause in clauses):
         return Priority.PROGRAMMABILE
+    if is_active_fault_report(text):
+        return Priority.MEDIA
     return None
 
 
@@ -272,14 +296,14 @@ def _unambiguous_blockage_from_source(source_text: str) -> bool:
 
 
 def reconcile_priority(source_text: str, provider_priority: Priority | None) -> Priority | None:
-    """Reconcile a validated proposal using only the original report/transcript."""
+    """Finalize a proposal; MEDIA fallback requires a concrete active fault."""
     evidence = priority_fallback(source_text)
     if evidence == Priority.URGENTE:
         return Priority.URGENTE
     if evidence == Priority.ALTA:
         return Priority.ALTA
     if provider_priority == Priority.URGENTE:
-        return evidence
+        return evidence or (Priority.MEDIA if is_active_fault_report(source_text) else None)
     if provider_priority is None:
-        return evidence
+        return evidence or (Priority.MEDIA if is_active_fault_report(source_text) else None)
     return provider_priority

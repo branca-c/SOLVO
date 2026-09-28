@@ -89,7 +89,7 @@ Define narrow application ports for:
 - `ObjectStore`: put/get/delete application-owned audio objects;
 - `NotificationProvider`: technician assignment notification containing a mobile link.
 
-The first implementation of every port is local and deterministic. This enables the full demo and automated tests without external accounts, network calls, or cloud costs. Provider selection occurs through configuration, never scattered conditionals.
+The first implementation of every port is local and deterministic. This enables the full demo and automated tests without external accounts, network calls, or cloud costs. Provider selection occurs through configuration, never scattered conditionals. The text-draft AI port also has a Groq adapter using its OpenAI-compatible chat-completions API with server-side credentials. It returns structured fields and a synthesized technical description in one generation; Ollama retains its local structured-extraction plus source-grounded quote-selection flow. Neither adapter has database, workflow or transcription access.
 
 ## 7. Security and data handling
 
@@ -288,8 +288,8 @@ handling, and inspect SQL to verify the absence of writes.
 
 The existing create page now has manual and assisted modes sharing one editable
 form and the original creation service. Analysis and creation are separate forms
-and separate requests. Missing draft values remain empty (including priority),
-so browser and backend creation validation still require completion. Warnings
+and separate requests. Missing draft values remain empty when the report lacks
+deterministic priority evidence. Warnings
 and proposed category name are shown beside the review form. Only explicit
 confirmation calls `POST /api/work-orders`; no new creation endpoint exists.
 Mode switching preserves edits, reanalysis explicitly replaces the form values,
@@ -619,11 +619,12 @@ and ID are returned. No unmatched request defaults to Altro.
 Priority reconciliation uses the original report, never the generated description.
 Explicit immediate danger, human safety risk, trapped people or an emergency takes
 precedence over any provider priority and yields URGENTE. Complete service blockage
-without explicit danger yields ALTA. A provider URGENTE is lowered only for narrowly
-recognized, unambiguous blockage reports (including explicit safety denials);
-unknown additional wording preserves URGENTE because lexical silence cannot rule
-out danger. Otherwise a missing/null priority uses priority_fallback(), and other
-provider values are preserved. Every changed value, including a filled missing
+without explicit danger yields ALTA. A provider URGENTE without source evidence is
+not retained. Otherwise a missing/null priority uses priority_fallback(), and other
+provider values are preserved unless an unproven URGENTE proposal must be lowered.
+If no specific evidence applies, reconciliation returns MEDIA only for a concrete
+active technical fault; greetings, information requests and generic concerns remain
+null. Every changed value, including a filled missing
 priority, receives an existing review warning. Text and audio share these rules.
 Rules evaluate URGENTE → ALTA → MEDIA → BASSA → PROGRAMMABILE. URGENTE requires
 explicit danger: trapped people, fire/smoke, gas leak/strong gas odor, exposed wires,
@@ -636,7 +637,8 @@ MEDIA covers concrete active malfunctions/leaks without stronger severity eviden
 BASSA covers explicit minor/cosmetic defects or minor deterioration/non-critical
 components with continued usability. PROGRAMMABILE covers preventive/planned work
 without evidence of active failure. An independent active failure takes precedence
-over minor/planned wording. Insufficient evidence leaves priority null.
+over minor/planned wording. Insufficient evidence receives the deterministic MEDIA
+fallback only when an active technical fault is described.
 Recognizable requester-name, phone, email and address spans are excluded from
 priority evidence; they do not alter the extracted contact or address fields.
 

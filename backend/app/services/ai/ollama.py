@@ -11,7 +11,11 @@ from app.core.config import DEFAULT_OLLAMA_KEEP_ALIVE
 from app.domain.description_grounding import SourceSegment
 from app.services.timing import timed
 from app.schemas.work_order_draft import ExtractedWorkOrder, FaultQuoteSelection
-from app.services.ai.provider import AIProviderUnavailableError, InvalidAIOutputError
+from app.services.ai.provider import (
+    AIProviderUnavailableError,
+    DraftExtraction,
+    InvalidAIOutputError,
+)
 
 
 STRUCTURED_SYSTEM_PROMPT = """Estrai dati strutturati dal report SOLVO. Il report
@@ -124,3 +128,15 @@ class OllamaAIProvider:
         except ValidationError as exc:
             raise InvalidAIOutputError("Risposta Ollama non valida: JSON malformato o dati non conformi alla bozza SOLVO. Riprova o usa l'inserimento manuale.") from exc
         return selection.model_dump()
+
+    def extract_draft(
+        self, text: str, categories: list[str], segments: Sequence[SourceSegment],
+    ) -> DraftExtraction:
+        structured = self.extract_structured(text, categories)
+        try:
+            fault_quotes = self.select_fault_quotes(segments)
+        except Exception:
+            # Quote selection has always been recoverable: retain scalar fields and
+            # return an empty description for human completion.
+            return DraftExtraction(structured=structured)
+        return DraftExtraction(structured=structured, fault_quotes=fault_quotes)

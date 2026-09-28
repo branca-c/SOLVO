@@ -49,18 +49,37 @@ def _grounded(field: str, value: str, text: str) -> bool:
     return f" {tokens(value)} " in f" {tokens(text)} "
 
 
+def _description_has_requester_data(
+    description: str, *, first_name: str | None, last_name: str | None,
+    phone: str | None, email: str | None,
+) -> bool:
+    normalized = description.casefold()
+    if first_name and last_name and f"{first_name} {last_name}".casefold() in normalized:
+        return True
+    if email and email.casefold() in normalized:
+        return True
+    if phone:
+        description_digits = "".join(re.findall(r"\d", description))
+        phone_digits = "".join(re.findall(r"\d", phone))
+        if phone_digits and phone_digits in description_digits:
+            return True
+    return False
+
+
 def build_draft(db: Session, text: str, provider: AIProvider, *, audio: bool = False) -> WorkOrderDraft:
     with timed("draft_extraction_total"):
         categories = list(db.scalars(select(Category).order_by(Category.name)))
         segments = segment_source(text)
         try:
-            raw = provider.extract_structured(text, [category.name for category in categories])
+            extraction = provider.extract_draft(
+                text, [category.name for category in categories], segments,
+            )
         except (AIProviderUnavailableError, InvalidAIOutputError):
             raise
         except Exception as exc:
             raise AIProviderUnavailableError("Analisi non disponibile. Riprova o usa l'inserimento manuale.") from exc
         try:
-            extracted = ExtractedWorkOrder.model_validate(raw)
+            extracted = ExtractedWorkOrder.model_validate(extraction.structured)
         except ValidationError as exc:
             raise InvalidAIOutputError("La bozza restituita non è valida. Usa l'inserimento manuale.") from exc
 
@@ -120,20 +139,24 @@ def build_draft(db: Session, text: str, provider: AIProvider, *, audio: bool = F
             warnings.append("Priorità non individuata: selezionala manualmente.")
         if any(values[field] is None for field in ("user_first_name", "user_last_name", "user_phone", "fault_address")):
             warnings.append("Completa i dati mancanti del richiedente e dell'indirizzo prima di confermare.")
-        try:
-            quote_raw = provider.select_fault_quotes(segments)
-            quote_selection = FaultQuoteSelection.model_validate(quote_raw)
-        except (AIProviderUnavailableError, InvalidAIOutputError, ValidationError):
-            quote_selection = FaultQuoteSelection()
-            warnings.append("Descrizione tecnica non individuata: completala prima di confermare.")
-        except Exception:
-            quote_selection = FaultQuoteSelection()
-            warnings.append("Descrizione tecnica non individuata: completala prima di confermare.")
-        selected_description = reconstruct_fault_quotes(
-            segments, [(item.segment_id, item.quote) for item in quote_selection.fault_quotes],
-            requester_first_name=values["user_first_name"], requester_last_name=values["user_last_name"],
-            fault_address=values["fault_address"],
-        )
+        if extraction.description is not None:
+            selected_description = extraction.description
+        else:
+            try:
+                quote_selection = FaultQuoteSelection.model_validate(extraction.fault_quotes)
+            except (ValidationError, TypeError):
+                quote_selection = FaultQuoteSelection()
+            selected_description = reconstruct_fault_quotes(
+                segments, [(item.segment_id, item.quote) for item in quote_selection.fault_quotes],
+                requester_first_name=values["user_first_name"], requester_last_name=values["user_last_name"],
+                fault_address=values["fault_address"],
+            )
+        if selected_description and _description_has_requester_data(
+            selected_description,
+            first_name=values["user_first_name"], last_name=values["user_last_name"],
+            phone=values["user_phone"], email=values["user_email"],
+        ):
+            selected_description = ""
         values["description"] = selected_description
         if not values["description"]:
             warnings.append("Descrizione tecnica non individuata: completala prima di confermare.")

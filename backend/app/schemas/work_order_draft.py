@@ -58,6 +58,12 @@ class ExtractedWorkOrder(_DraftFields):
     """Structured provider contract: no IDs, workflow fields, or quote selections."""
 
 
+class GeneratedWorkOrderDraft(_DraftFields):
+    """Internal provider contract for a synthesized, editable description."""
+
+    description: str = Field(default="", max_length=10000)
+
+
 class FaultQuoteSelection(BaseModel):
     """Quote-only provider contract."""
 

@@ -6,6 +6,7 @@ from app.domain.description_grounding import (
     SourceSegment,
     segment_is_safe_for_description,
 )
+from app.services.ai.provider import DraftExtraction
 
 # Category names are proposals, never database IDs.
 CATEGORY_PATTERNS = {
@@ -118,3 +119,11 @@ class MockAIProvider:
         return {
             "fault_quotes": fault_quotes,
         }
+
+    def extract_draft(
+        self, text: str, categories: list[str], segments: Sequence[SourceSegment],
+    ) -> DraftExtraction:
+        return DraftExtraction(
+            structured=self.extract_structured(text, categories),
+            fault_quotes=self.select_fault_quotes(segments),
+        )
