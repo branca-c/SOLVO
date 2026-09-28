@@ -1,5 +1,6 @@
 import type { Category, Technician } from '../types/referenceData'
 import type { Assignment, HistoryEntry, Reminder, WorkOrder, WorkOrderInput, WorkOrderStatus, Priority, WorkOrderDraft, AudioWorkOrderDraft, PublicAssignment, NotificationResult } from '../types/workOrder'
+import { apiUrl } from './backendUrl'
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) { super(message) }
@@ -25,8 +26,7 @@ export function errorDetail(body: unknown): string | undefined {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   let response: Response
   try {
-    // Same-origin requests: Vite forwards /api to VITE_API_BASE_URL locally.
-    response = await fetch(`/api${path}`, {
+    response = await fetch(apiUrl(path), {
       ...options,
       headers: { Accept: 'application/json', ...(options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}) },
     })

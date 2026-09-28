@@ -1,3 +1,5 @@
+import { realtimeUrl } from './backendUrl'
+
 export const eventTypes = [
   'work_order.created', 'work_order.updated', 'work_order.deleted', 'work_order.status_changed',
   'reminder.created', 'assignment.created', 'assignment.accepted', 'assignment.rejected',
@@ -6,11 +8,7 @@ export const eventTypes = [
 export interface RealtimeEvent { type: typeof eventTypes[number]; work_order_id: number; timestamp: string }
 export type ConnectionStatus = 'Live' | 'Riconnessione…' | 'Offline'
 
-export function websocketUrl(base = window.location.origin): string {
-  const url = new URL('/ws/work-orders', base)
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  return url.toString()
-}
+export const websocketUrl = realtimeUrl
 
 export function connectRealtime(onEvent: (event: RealtimeEvent) => void, onStatus: (status: ConnectionStatus) => void, onOpen: () => void) {
   let socket: WebSocket | undefined
