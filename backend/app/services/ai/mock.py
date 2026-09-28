@@ -1,4 +1,11 @@
 import re
+from collections.abc import Sequence
+
+from app.domain.description_grounding import (
+    MAX_FAULT_QUOTES,
+    SourceSegment,
+    segment_is_safe_for_description,
+)
 
 # Category names are proposals, never database IDs.
 CATEGORY_PATTERNS = {
@@ -58,7 +65,7 @@ def _priority(text: str) -> str | None:
 class MockAIProvider:
     """Conservative deterministic heuristics, not a language model."""
 
-    def extract(self, text: str, categories: list[str]) -> object:
+    def extract_structured(self, text: str, categories: list[str]) -> object:
         first_name = _labelled(text, "nome")
         last_name = _labelled(text, "cognome")
         # Free-form names require an explicit introduction and two capitalized tokens.
@@ -98,4 +105,16 @@ class MockAIProvider:
             "category_name": proposed_category,
             "priority": _priority(text),
             "warnings": warnings,
+        }
+
+    def select_fault_quotes(self, segments: Sequence[SourceSegment]) -> object:
+        fault_quotes = [
+            {"segment_id": segment.id, "quote": segment.text}
+            for segment in segments
+            if segment_is_safe_for_description(
+                segment,
+            )
+        ][:MAX_FAULT_QUOTES]
+        return {
+            "fault_quotes": fault_quotes,
         }

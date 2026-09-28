@@ -185,6 +185,9 @@ def test_real_audio_transcript_reconstructs_email_and_keeps_only_fault_descripti
             "fault_address": "Via Roma 25, Palermo",
             "category_name": "Ascensore",
             "priority": "URGENTE",
+            "fault_quotes": [{
+                "segment_id": "S2", "quote": "Ci sono delle persone bloccate in ascensore",
+            }],
         }), audio=True)
 
     assert draft.user_first_name == "Chiara"
@@ -194,7 +197,7 @@ def test_real_audio_transcript_reconstructs_email_and_keeps_only_fault_descripti
     assert draft.fault_address == "Via Roma 25, Palermo"
     assert draft.category_name == "Ascensore"
     assert draft.priority == "URGENTE"
-    assert draft.description == "Ci sono delle persone bloccate in ascensore."
+    assert draft.description == "Ci sono delle persone bloccate in ascensore"
     for excluded in ("chiara", "328", "gmail", "via roma", "buongiorno", "grazie"):
         assert excluded not in draft.description.casefold()
     assert any("Email ricostruita dalla trascrizione audio" in warning for warning in draft.warnings)

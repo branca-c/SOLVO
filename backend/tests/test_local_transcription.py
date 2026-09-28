@@ -155,7 +155,7 @@ def test_local_endpoint_uses_existing_draft_pipeline_without_writes(api, runtime
     assert data['transcription_source'] == 'local_whisper'
     assert data['draft']['category_id'] == 1
     assert data['draft']['fault_address'] == 'Via Roma 12'
-    assert data['draft']['description'] == 'Guasto elettrico.'
+    assert data['draft']['description'] == 'Guasto elettrico in Via Roma 12.'
     assert not any('simulata' in warning for warning in data['draft']['warnings'])
     assert statements and all(s.lstrip().upper().startswith('SELECT') for s in statements)
     assert client.get('/api/work-orders').json() == []

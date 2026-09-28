@@ -9,7 +9,7 @@ CATEGORY_SIGNALS = {
     "Idraulico": r"perdita (?:d )?acqua|tub[oi]|rubinett[oi]|lavandin[oi]|scarico|scarichi|sifon[ei]|allagament[oi]",
     "Climatizzazione": r"climatizzator[ei]|condizionator[ei]|aria condizionata|split",
     "Riscaldamento": r"termosifon[ei]|caldai[ae]|riscaldamento|calorifer[oi]",
-    "Elettrico": r"corrente|pres[ae] elettrich?[ae]|interruttor[ei]|quadr[oi] elettric[oi]|corto circuito|cortocircuito",
+    "Elettrico": r"black ?out|mancanza di corrente|senza corrente|corrente|pres[ae] elettrich?[ae]|interruttor[ei]|quadr[oi] elettric[oi]|corto circuito|cortocircuito",
     "Rete": r"rete|internet|connession[ei]|wi fi|wifi",
     "Vetri": r"vetr[oi]|vetrat[ae]",
     "Serramenti": r"port[ae]|finestr[ae]|serratur[ae]|infiss[oi]",
@@ -46,6 +46,14 @@ def category_fallback(text: str) -> str | None:
                  if any(_positive(pattern, clause) for clause in clauses)]
     # Consider competing signals even if a competing category is not configured.
     return supported[0] if len(supported) == 1 else None
+
+
+def category_guardrail(text: str) -> str | None:
+    """Return only finite, high-confidence overrides for incompatible proposals."""
+    electrical_outage = r"black ?out|mancanza di corrente|senza corrente"
+    if any(_positive(electrical_outage, clause) for clause in _clauses(text)):
+        return "Elettrico"
+    return None
 
 
 def _priority_clauses(text: str) -> list[str]:
@@ -269,13 +277,9 @@ def reconcile_priority(source_text: str, provider_priority: Priority | None) -> 
     if evidence == Priority.URGENTE:
         return Priority.URGENTE
     if evidence == Priority.ALTA:
-        if provider_priority == Priority.URGENTE and _complete_heating_outage(
-            _priority_clauses(source_text)
-        ):
-            return Priority.ALTA
-        if provider_priority == Priority.URGENTE and not _unambiguous_blockage_from_source(source_text):
-            return provider_priority
         return Priority.ALTA
+    if provider_priority == Priority.URGENTE:
+        return evidence
     if provider_priority is None:
         return evidence
     return provider_priority

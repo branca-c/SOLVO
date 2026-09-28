@@ -4,12 +4,20 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.domain.draft_classification import category_fallback, normalize, reconcile_priority
-from app.domain.description_grounding import source_grounded_description
+from app.domain.draft_classification import (
+    category_fallback,
+    category_guardrail,
+    normalize,
+    reconcile_priority,
+)
+from app.domain.description_grounding import (
+    reconstruct_fault_quotes,
+    segment_source,
+)
 from app.domain.email_addresses import audio_email_candidate, email_grounded
 from app.models import Category
 from app.services.timing import timed
-from app.schemas.work_order_draft import ExtractedWorkOrder, WorkOrderDraft
+from app.schemas.work_order_draft import ExtractedWorkOrder, FaultQuoteSelection, WorkOrderDraft
 from app.services.ai.provider import AIProvider, AIProviderUnavailableError, InvalidAIOutputError
 
 
@@ -44,8 +52,9 @@ def _grounded(field: str, value: str, text: str) -> bool:
 def build_draft(db: Session, text: str, provider: AIProvider, *, audio: bool = False) -> WorkOrderDraft:
     with timed("draft_extraction_total"):
         categories = list(db.scalars(select(Category).order_by(Category.name)))
+        segments = segment_source(text)
         try:
-            raw = provider.extract(text, [category.name for category in categories])
+            raw = provider.extract_structured(text, [category.name for category in categories])
         except (AIProviderUnavailableError, InvalidAIOutputError):
             raise
         except Exception as exc:
@@ -83,7 +92,13 @@ def build_draft(db: Session, text: str, provider: AIProvider, *, audio: bool = F
                        if name and _normalize(category.name) == _normalize(name)]
             return matches[0] if len(matches) == 1 else None
 
-        category = resolve(extracted.category_name)
+        guarded_category = category_guardrail(text)
+        category = resolve(guarded_category) if guarded_category else resolve(extracted.category_name)
+        if category and guarded_category and (
+            not extracted.category_name
+            or normalize(extracted.category_name) != normalize(guarded_category)
+        ):
+            warnings.append("Categoria proposta tramite regole deterministiche: verifica prima di confermare.")
         if category is None:
             proposal = category_fallback(text)
             matches = [item for item in categories
@@ -105,7 +120,21 @@ def build_draft(db: Session, text: str, provider: AIProvider, *, audio: bool = F
             warnings.append("Priorità non individuata: selezionala manualmente.")
         if any(values[field] is None for field in ("user_first_name", "user_last_name", "user_phone", "fault_address")):
             warnings.append("Completa i dati mancanti del richiedente e dell'indirizzo prima di confermare.")
-        values["description"] = source_grounded_description(text)
+        try:
+            quote_raw = provider.select_fault_quotes(segments)
+            quote_selection = FaultQuoteSelection.model_validate(quote_raw)
+        except (AIProviderUnavailableError, InvalidAIOutputError, ValidationError):
+            quote_selection = FaultQuoteSelection()
+            warnings.append("Descrizione tecnica non individuata: completala prima di confermare.")
+        except Exception:
+            quote_selection = FaultQuoteSelection()
+            warnings.append("Descrizione tecnica non individuata: completala prima di confermare.")
+        selected_description = reconstruct_fault_quotes(
+            segments, [(item.segment_id, item.quote) for item in quote_selection.fault_quotes],
+            requester_first_name=values["user_first_name"], requester_last_name=values["user_last_name"],
+            fault_address=values["fault_address"],
+        )
+        values["description"] = selected_description
         if not values["description"]:
             warnings.append("Descrizione tecnica non individuata: completala prima di confermare.")
         # Keep authoritative review warnings visible even if the model supplied ten.

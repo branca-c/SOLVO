@@ -4,7 +4,9 @@ from sqlalchemy.orm import Session
 
 from app.api.ai import get_ai_provider
 from app.core.config import get_settings
+from app.domain.description_grounding import segment_source
 from app.models import Category, WorkOrder, WorkOrderHistory
+from app.schemas.work_order_draft import WorkOrderDraft
 from app.services.ai.mock import MockAIProvider
 from tests.test_work_orders_api import create
 
@@ -60,8 +62,8 @@ def test_category_mappings_use_configured_rows_not_fixed_ids(api, text, category
 
 @pytest.mark.parametrize("text,priority", [
     ("Perdita d'acqua con rischio per le persone", "URGENTE"),
-    ("Ascensore bloccato con persone dentro", "URGENTE"),
-    ("Rischi per le persone nel locale", "URGENTE"),
+    ("Ascensore bloccato con persone dentro", "ALTA"),
+    ("Rischi per le persone nel locale", None),
     ("Ascensore bloccato", "ALTA"),
     ("Interruzione totale della rete", "ALTA"),
     ("Rubinetto guasto", "MEDIA"),
@@ -140,9 +142,129 @@ def test_endpoint_never_writes_even_with_creation_instructions(api):
 class StubProvider:
     def __init__(self, result):
         self.result = result
+        self.calls = []
 
-    def extract(self, text, categories):
-        return self.result
+    def extract_structured(self, text, categories):
+        self.calls.append(("structured", text, categories))
+        if not isinstance(self.result, dict):
+            return self.result
+        return {key: value for key, value in self.result.items() if key != "fault_quotes"}
+
+    def select_fault_quotes(self, segments):
+        self.calls.append(("quotes", segments))
+        return {"fault_quotes": self.result.get("fault_quotes", [])}
+
+
+def test_mock_provider_selects_only_safe_server_issued_quotes():
+    text = "Problema di rete. - tel. 3286677356 - mail mario.rossi@outlook.com"
+    segments = segment_source(text)
+
+    result = MockAIProvider().select_fault_quotes(segments)
+
+    assert result["fault_quotes"] == [{"segment_id": "S1", "quote": "Problema di rete."}]
+    assert {quote["segment_id"] for quote in result["fault_quotes"]}.issubset(
+        {segment.id for segment in segments}
+    )
+
+
+def test_draft_passes_source_segments_without_exposing_quotes(api):
+    client, _ = api
+    provider = StubProvider({"fault_quotes": [
+        {"segment_id": "S999", "quote": "Testo inventato"},
+        {"segment_id": "S1", "quote": "Il cancello non si apre"},
+    ]})
+    client.app.dependency_overrides[get_ai_provider] = lambda: provider
+    text = "Il cancello non si apre. Il mio numero di telefono è 3331234567."
+
+    response = client.post(URL, json={"text": text})
+
+    assert response.status_code == 200
+    assert [segment.id for segment in provider.calls[1][1]] == ["S1", "S2"]
+    assert response.json()["description"] == "Il cancello non si apre"
+    assert "fault_quotes" not in response.json()
+
+
+def test_selected_quotes_reconstruct_in_source_order_without_duplicates(api):
+    client, _ = api
+    provider = StubProvider({"fault_quotes": [
+        {"segment_id": "S2", "quote": "Sala CED, piano 2"},
+        {"segment_id": "S1", "quote": "Il server non risponde"},
+    ]})
+    client.app.dependency_overrides[get_ai_provider] = lambda: provider
+
+    response = client.post(URL, json={"text": "Il server non risponde. Sala CED, piano 2."})
+
+    assert response.status_code == 200
+    assert response.json()["description"] == "Il server non risponde Sala CED, piano 2"
+
+
+@pytest.mark.parametrize(("fault_quotes", "text", "provider_data"), [
+    ([{"segment_id": "S2", "quote": "3331234567"}], "Il cancello non si apre. Il mio numero di telefono è 3331234567", {}),
+    ([{"segment_id": "S2", "quote": "mario@example.com"}], "Il cancello non si apre. La mia mail è mario@example.com", {}),
+    ([{"segment_id": "S1", "quote": "Sono Mario Rossi"}], "Sono Mario Rossi. Il cancello non si apre.", {
+        "user_first_name": "Mario", "user_last_name": "Rossi",
+    }),
+    ([{"segment_id": "S999", "quote": "IGNORE_PREVIOUS_INSTRUCTIONS"}], "Il cancello non si apre.", {}),
+    ([], "Il cancello non si apre.", {}),
+])
+def test_rejected_or_empty_fault_quotes_leave_description_empty(
+    api, fault_quotes, text, provider_data,
+):
+    client, _ = api
+    client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({
+        **provider_data, "fault_quotes": fault_quotes,
+    })
+
+    response = client.post(URL, json={"text": text})
+
+    assert response.status_code == 200
+    assert response.json()["description"] == ""
+    assert "IGNORE_PREVIOUS_INSTRUCTIONS" not in response.json()["description"]
+    assert "Descrizione tecnica non individuata: completala prima di confermare." in response.json()["warnings"]
+
+
+def test_selected_fault_and_operational_location_segments_are_retained(api):
+    client, _ = api
+    client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({
+        "fault_quotes": [
+            {"segment_id": "S2", "quote": "Sito al piano 2° nell'aula n. 5 di ingegneria"},
+            {"segment_id": "S1", "quote": "Problemi di rete al PC del Prof. Pelitteri"},
+        ],
+    })
+    text = "Problemi di rete al PC del Prof. Pelitteri. Sito al piano 2° nell'aula n. 5 di ingegneria."
+
+    response = client.post(URL, json={"text": text})
+
+    assert response.status_code == 200
+    assert response.json()["description"] == (
+        "Problemi di rete al PC del Prof. Pelitteri "
+        "Sito al piano 2° nell'aula n. 5 di ingegneria"
+    )
+
+
+def test_mario_selected_segments_reconstruct_exact_server_held_source(api):
+    client, _ = api
+    client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({
+        "user_first_name": "Mario", "user_last_name": "Rossi",
+        "fault_quotes": [
+            {"segment_id": "S3", "quote": "problemi di rete al PC del Prof. Pelitteri"},
+            {"segment_id": "S4", "quote": "sito al piano 2° nell'aula n. 5 di ingegneria"},
+        ],
+    })
+    text = (
+        "Buonasera, mi chiamo Mario Rossi, vorrei chiedere intervento di un tecnico "
+        "all'Università di Palermo sita in Viale delle Scienze, 100 Palermo per problemi "
+        "di rete al PC del Prof. Pelitteri, sito al piano 2° nell'aula n. 5 di ingegneria "
+        "- tel. 3286677356 - mail mario.rossi@outlook.com. Cordiali saluti"
+    )
+
+    response = client.post(URL, json={"text": text})
+
+    assert response.status_code == 200
+    assert response.json()["description"] == (
+        "problemi di rete al PC del Prof. Pelitteri "
+        "sito al piano 2° nell'aula n. 5 di ingegneria"
+    )
 
 
 def test_real_audio_start_address_entrapment_uses_source_description_and_urgent_priority(api):
@@ -154,13 +276,99 @@ def test_real_audio_start_address_entrapment_uses_source_description_and_urgent_
         "Vi prego di intervenire al più presto. Grazie."
     )
     client, _ = api
-    client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({'priority': 'MEDIA'})
+    client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({
+        'priority': 'MEDIA', 'fault_quotes': [{
+            'segment_id': 'S2', 'quote': 'ci sono delle persone bloccate in ascensore',
+        }],
+    })
 
     response = client.post(URL, json={'text': transcript})
 
     assert response.status_code == 200
-    assert response.json()['description'] == 'Ci sono delle persone bloccate in ascensore.'
+    assert response.json()['description'] == (
+        'ci sono delle persone bloccate in ascensore'
+    )
     assert response.json()['priority'] == 'URGENTE'
+
+
+def test_public_work_order_draft_schema_does_not_expose_fault_quotes():
+    assert "fault_quotes" not in WorkOrderDraft.model_fields
+
+
+def test_no_safe_fault_quote_keeps_description_empty_with_existing_review_warning(api):
+    client, _ = api
+    client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({
+        "fault_quotes": [{"segment_id": "S999", "quote": "Testo inventato"}],
+    })
+
+    response = client.post(URL, json={"text": "Il cancello non si apre."})
+
+    assert response.status_code == 200
+    assert response.json()["description"] == ""
+    assert "Descrizione tecnica non individuata: completala prima di confermare." in response.json()["warnings"]
+
+
+def test_blackout_uses_fault_only_quote_electrical_category_and_nonurgent_priority(api):
+    client, _ = api
+    text = (
+        "sono vincenzo di franco vorrei segnalare un black out in Via Delle Alpi, 45 Palermo, "
+        "potete contattarmi al 3286677356 o via mail a vincenzo.difranco@gmail.com, grazie, saluti"
+    )
+    client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({
+        "user_first_name": "Vincenzo", "user_last_name": "Di Franco",
+        "fault_address": "Via Delle Alpi, 45 Palermo",
+        "category_name": "Riscaldamento", "priority": "URGENTE",
+        "fault_quotes": [{"segment_id": "S1", "quote": "un black out"}],
+    })
+
+    response = client.post(URL, json={"text": text})
+
+    assert response.status_code == 200
+    assert response.json()["description"] == "un black out"
+    assert response.json()["category_name"] == "Elettrico"
+    assert response.json()["priority"] != "URGENTE"
+    for unsafe in ("vincenzo", "di franco", "3286677356", "@gmail", "Via Delle Alpi", "Palermo"):
+        assert unsafe.casefold() not in response.json()["description"].casefold()
+
+
+def test_mario_fault_quotes_reconstruct_exact_useful_fault_and_context(api):
+    client, _ = api
+    text = (
+        "Buonasera, mi chiamo Mario Rossi, vorrei chiedere intervento di un tecnico "
+        "all'Università di Palermo sita in Viale delle Scienze, 100 Palermo per problemi "
+        "di rete al PC del Prof. Pelitteri, sito al piano 2° nell'aula n. 5 di ingegneria "
+        "- tel. 3286677356 - mail mario.rossi@outlook.com. Cordiali saluti"
+    )
+    client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({
+        "user_first_name": "Mario", "user_last_name": "Rossi",
+        "fault_quotes": [
+            {"segment_id": "S4", "quote": "sito al piano 2° nell'aula n. 5 di ingegneria"},
+            {"segment_id": "S3", "quote": "problemi di rete al PC del Prof. Pelitteri"},
+        ],
+    })
+
+    response = client.post(URL, json={"text": text})
+
+    assert response.status_code == 200
+    assert response.json()["description"] == (
+        "problemi di rete al PC del Prof. Pelitteri "
+        "sito al piano 2° nell'aula n. 5 di ingegneria"
+    )
+
+
+def test_trapped_elevator_exact_fault_quote_stays_grounded_and_urgent(api):
+    client, _ = api
+    text = "Ci sono delle persone bloccate in ascensore."
+    client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({
+        "priority": "MEDIA",
+        "fault_quotes": [{"segment_id": "S1", "quote": "Ci sono delle persone bloccate in ascensore"}],
+    })
+
+    response = client.post(URL, json={"text": text})
+
+    assert response.status_code == 200
+    assert response.json()["description"] == "Ci sono delle persone bloccate in ascensore"
+    assert response.json()["priority"] == "URGENTE"
 
 
 def test_empty_source_extraction_stays_empty_and_keeps_description_warning(api):
@@ -193,6 +401,7 @@ def test_fallback_description_and_ungrounded_details_are_removed(api):
         'user_first_name': 'Inventato', 'user_phone': '999999999',
         'user_email': 'inventato@example.com', 'fault_address': 'Via inventata 99',
         'category_name': '  idraulico  ',
+        'fault_quotes': [{'segment_id': 'S1', 'quote': 'Perdita dal tubo'}],
     })
     draft = client.post(URL, json={'text': 'Perdita dal tubo'}).json()
     assert draft['description'] == 'Perdita dal tubo'
@@ -216,7 +425,7 @@ def test_provider_failure_is_recoverable_and_does_not_expose_details(api, monkey
     def fail(self, text, categories):
         raise RuntimeError('provider secret technical details')
 
-    monkeypatch.setattr(MockAIProvider, 'extract', fail)
+    monkeypatch.setattr(MockAIProvider, 'extract_structured', fail)
     response = client.post(URL, json={'text': 'Guasto'})
     assert response.status_code == 503
     assert 'secret' not in response.text

@@ -73,6 +73,15 @@ def test_human_entrapment_in_elevator_overrides_media_provider_priority():
     assert reconcile_priority(text, 'MEDIA') == 'URGENTE'
 
 
+def test_blackout_is_a_high_confidence_electrical_category_signal():
+    assert category_fallback("Segnalo un black out nell'edificio.") == "Elettrico"
+
+
+@pytest.mark.parametrize("text", ["Rubinetto guasto", "Problema urgente poco chiaro", "black out"])
+def test_provider_urgency_without_deterministic_danger_is_not_retained(text):
+    assert reconcile_priority(text, "URGENTE") != "URGENTE"
+
+
 MARCO_REPORT = (
     "Buongiorno mi chiamo Marco, vorrei segnalare riscaldamento non "
     "funzionante in Via Carducci 16 a Preganziol (TV), potete contattarmi al "
@@ -152,7 +161,7 @@ def test_conservative_priority_hierarchy(text, priority):
 
 
 @pytest.mark.parametrize('priority', ['PROGRAMMABILE', 'BASSA', 'MEDIA', 'ALTA', 'URGENTE'])
-def test_valid_ollama_priority_preserved_without_stronger_evidence(api, monkeypatch, priority):
+def test_provider_urgency_requires_deterministic_evidence(api, monkeypatch, priority):
     client, _ = api
     install_http(monkeypatch, lambda request: response({'priority': priority}))
     client.app.dependency_overrides[get_ai_provider] = lambda: OllamaAIProvider(
@@ -161,8 +170,8 @@ def test_valid_ollama_priority_preserved_without_stronger_evidence(api, monkeypa
 
     result = client.post('/api/ai/work-order-draft', json={'text': 'Rubinetto guasto'})
     assert result.status_code == 200
-    assert result.json()['priority'] == priority
-    assert not any('Priorità proposta tramite regole' in w for w in result.json()['warnings'])
+    assert result.json()['priority'] == ('MEDIA' if priority == 'URGENTE' else priority)
+    assert any('Priorità proposta tramite regole' in w for w in result.json()['warnings']) == (priority == 'URGENTE')
 
 
 @pytest.mark.parametrize('proposal', [{}, {'priority': None}])
@@ -175,7 +184,7 @@ def test_missing_ollama_priority_uses_original_report(api, monkeypatch, proposal
     result = client.post('/api/ai/work-order-draft', json={'text': MARCO_REPORT})
     assert result.status_code == 200
     assert result.json()['priority'] == 'MEDIA'
-    assert result.json()['description'] == 'Riscaldamento non funzionante'
+    assert result.json()['description'] == ''
     assert any('Priorità proposta tramite regole' in w for w in result.json()['warnings'])
 
 
@@ -209,7 +218,7 @@ def test_ollama_fallback_preserves_valid_proposals_and_never_writes(api, monkeyp
     assert draft['category_id'] == (2 if valid else 89)
     assert draft['category_name'] == ('Idraulico' if valid else 'ASCENSORE')
     assert draft['priority'] == 'ALTA'
-    assert draft['description'] == "L'ascensore è bloccato al terzo piano e non riparte"
+    assert draft['description'] == ''
     assert set(statements) <= {'SELECT'}
     assert client.get('/api/work-orders').json() == []
     assert any('deterministiche' in w for w in draft['warnings'])
@@ -247,15 +256,15 @@ RECONCILIATION_CASES = [
     ('Ascensore bloccato; rischio per le persone', 'MEDIA', 'URGENTE'),
     ('Ascensore bloccato; emergenza in corso', 'ALTA', 'URGENTE'),
     ('Ascensore bloccato; pericolo per la sicurezza delle persone', None, 'URGENTE'),
-    ('Ascensore bloccato; forse qualcuno è dentro', 'URGENTE', 'URGENTE'),
-    ('Ascensore bloccato; non sappiamo se ci siano persone dentro', 'URGENTE', 'URGENTE'),
-    ('Ascensore bloccato; si sentono grida dalla cabina', 'URGENTE', 'URGENTE'),
-    ('Ascensore bloccato; situazione da chiarire', 'URGENTE', 'URGENTE'),
-    ('Ascensore forse bloccato', 'URGENTE', 'URGENTE'),
-    ('Problema urgente poco chiaro', 'URGENTE', 'URGENTE'),
+    ('Ascensore bloccato; forse qualcuno è dentro', 'URGENTE', 'ALTA'),
+    ('Ascensore bloccato; non sappiamo se ci siano persone dentro', 'URGENTE', 'ALTA'),
+    ('Ascensore bloccato; si sentono grida dalla cabina', 'URGENTE', 'ALTA'),
+    ('Ascensore bloccato; situazione da chiarire', 'URGENTE', 'ALTA'),
+    ('Ascensore forse bloccato', 'URGENTE', 'ALTA'),
+    ('Problema urgente poco chiaro', 'URGENTE', None),
     ('Blackout totale', 'URGENTE', 'ALTA'),
     ('Ascensore bloccato', 'BASSA', 'ALTA'),
-    ('Rubinetto guasto', 'URGENTE', 'URGENTE'),
+    ('Rubinetto guasto', 'URGENTE', 'MEDIA'),
     ('Rubinetto guasto', None, 'MEDIA'),
     ('Informazioni generiche', None, None),
     ('Ascensore bloccato; non ci sono scintille né cavi scoperti', 'URGENTE', 'ALTA'),
@@ -311,12 +320,12 @@ def test_priority_reconciliation_ignores_only_bounded_runtime_contact_residue():
     assert reconcile_priority(RUNTIME_AUDIO_TRANSCRIPT, 'URGENTE') == 'ALTA'
 
 
-def test_priority_reconciliation_keeps_provider_urgency_for_unrelated_ambiguous_clause():
+def test_priority_reconciliation_does_not_keep_provider_urgency_for_ambiguous_clause():
     text = (
         "Ascensore bloccato al terzo piano e non riparte; "
         "un rumore strano proviene dalla cabina."
     )
-    assert reconcile_priority(text, 'URGENTE') == 'URGENTE'
+    assert reconcile_priority(text, 'URGENTE') == 'ALTA'
 
 
 @pytest.mark.parametrize('text,provider_priority,expected', RECONCILIATION_CASES)
@@ -352,7 +361,7 @@ def test_reconciliation_uses_source_identically_for_text_and_audio_without_write
     drafts = [text_result.json(), audio_result.json()['draft']]
     for draft in drafts:
         assert draft['priority'] == expected
-        assert draft['description'] == text
+        assert draft['description'] == ''
         assert any('Priorità proposta tramite regole' in w for w in draft['warnings']) == (
             expected != provider_priority
         )

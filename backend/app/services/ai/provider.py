@@ -1,12 +1,18 @@
+from collections.abc import Sequence
 from typing import Protocol
 
 from app.core.config import DEFAULT_OLLAMA_KEEP_ALIVE
+from app.domain.description_grounding import SourceSegment
 from app.services.ai.mock import MockAIProvider
 
 
 class AIProvider(Protocol):
-    def extract(self, text: str, categories: list[str]) -> object:
-        """Return untrusted structured data, validated by the application service."""
+    def extract_structured(self, text: str, categories: list[str]) -> object:
+        """Return untrusted scalar extraction data."""
+        ...
+
+    def select_fault_quotes(self, segments: Sequence[SourceSegment]) -> object:
+        """Return untrusted exact quote selections."""
         ...
 
 

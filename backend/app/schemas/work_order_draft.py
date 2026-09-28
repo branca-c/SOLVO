@@ -13,8 +13,8 @@ class WorkOrderDraftRequest(BaseModel):
     text: str = Field(min_length=1, max_length=10000)
 
 
-class ExtractedWorkOrder(BaseModel):
-    """Provider contract: no IDs, workflow fields, or persistence commands."""
+class _DraftFields(BaseModel):
+    """Fields shared by the untrusted provider result and public draft."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -45,7 +45,30 @@ class ExtractedWorkOrder(BaseModel):
         return data
 
 
-class WorkOrderDraft(ExtractedWorkOrder):
+class FaultQuote(BaseModel):
+    """Untrusted extractive selection tied to one server-issued source segment."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    segment_id: Annotated[str, Field(min_length=1, max_length=32)]
+    quote: Annotated[str, Field(min_length=1, max_length=10000)]
+
+
+class ExtractedWorkOrder(_DraftFields):
+    """Structured provider contract: no IDs, workflow fields, or quote selections."""
+
+
+class FaultQuoteSelection(BaseModel):
+    """Quote-only provider contract."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    fault_quotes: list[FaultQuote] = Field(
+        default_factory=list, max_length=2
+    )
+
+
+class WorkOrderDraft(_DraftFields):
     category_id: int | None = None
     description: str = Field(max_length=10000)
 
