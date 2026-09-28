@@ -299,6 +299,40 @@ def test_public_work_order_draft_schema_does_not_expose_fault_quotes():
     assert "fault_quotes" not in WorkOrderDraft.model_fields
 
 
+def test_missing_provider_address_uses_explicit_source_address_without_changing_public_schema(api):
+    client, engine = api
+    with Session(engine) as db:
+        db.add(Category(id=91, name='Vetri'))
+        db.commit()
+    client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({
+        'category_name': 'Vetri', 'description': 'Rottura vetro al secondo piano.',
+    })
+
+    response = client.post(URL, json={
+        'text': "Rottura vetro al secondo piano dell'appartamento in Via delle Ginestre 25, Palermo.",
+    })
+
+    assert response.status_code == 200
+    draft = response.json()
+    assert draft['fault_address'] == 'Via delle Ginestre 25, Palermo'
+    assert draft['category_name'] == 'Vetri'
+    assert draft['priority'] == 'MEDIA'
+    assert draft['description'] == 'Rottura vetro al secondo piano.'
+    assert 'fault_quotes' not in draft
+
+
+def test_grounded_provider_address_is_retained_without_source_fallback(api):
+    client, _ = api
+    client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({
+        'fault_address': 'Via Roma 12', 'description': 'Vetro rotto.',
+    })
+
+    response = client.post(URL, json={'text': 'Vetro rotto in Via Roma 12.'})
+
+    assert response.status_code == 200
+    assert response.json()['fault_address'] == 'Via Roma 12'
+
+
 def test_no_safe_fault_quote_keeps_description_empty_with_existing_review_warning(api):
     client, _ = api
     client.app.dependency_overrides[get_ai_provider] = lambda: StubProvider({

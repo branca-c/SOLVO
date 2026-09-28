@@ -11,6 +11,7 @@ from app.domain.draft_classification import (
     reconcile_priority,
 )
 from app.domain.description_grounding import (
+    postal_address_from_source,
     reconstruct_fault_quotes,
     segment_source,
 )
@@ -104,6 +105,11 @@ def build_draft(db: Session, text: str, provider: AIProvider, *, audio: bool = F
             if value and not (field == "user_email" and value == audio_email) and not _grounded(field, value, text):
                 values[field] = None
                 warnings.append("Un dato non presente nel testo è stato escluso dalla bozza.")
+        if extracted.fault_address is None and values["fault_address"] is None:
+            fallback_address = postal_address_from_source(text)
+            if fallback_address:
+                values["fault_address"] = fallback_address
+                warnings.append("Indirizzo del guasto proposto dal testo originale: verifica prima di confermare.")
         category_id = None
         values["category_name"] = None
         def resolve(name: str | None) -> Category | None:

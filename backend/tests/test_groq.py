@@ -133,6 +133,29 @@ def test_groq_safe_description_is_retained_in_public_draft_with_one_request(monk
     assert draft.priority.value == "MEDIA"
 
 
+def test_groq_missing_address_uses_one_explicit_source_address_fallback(monkeypatch):
+    text = "Rottura vetro al secondo piano dell'appartamento in Via delle Ginestre 25, Palermo."
+    result = {
+        **RESULT,
+        "fault_address": None,
+        "category_name": "Vetri",
+        "priority": None,
+        "description": "Rottura vetro al secondo piano.",
+    }
+    calls = []
+    install_http(monkeypatch, lambda request: calls.append(request) or completion(result))
+
+    draft = build_draft(
+        FakeSession([Category(id=8, name="Vetri")]), text, groq_provider(),
+    )
+
+    assert len(calls) == 1
+    assert draft.fault_address == "Via delle Ginestre 25, Palermo"
+    assert draft.category_name == "Vetri"
+    assert draft.priority.value == "MEDIA"
+    assert draft.description == "Rottura vetro al secondo piano."
+
+
 @pytest.mark.parametrize("unsafe_description", [
     "Anna Bianchi segnala il climatizzatore guasto.",
     "Il climatizzatore è guasto. Telefono 3471234567.",

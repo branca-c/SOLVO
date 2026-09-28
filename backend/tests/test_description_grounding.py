@@ -1,6 +1,7 @@
 import pytest
 
 from app.domain.description_grounding import (
+    postal_address_from_source,
     reconstruct_fault_quotes,
     reconstruct_selected_segments,
     segment_source,
@@ -86,6 +87,16 @@ def test_reconstruction_bounds_excessive_selection_in_source_order():
 ])
 def test_reconstruction_rejects_contact_identity_and_address_only_segments(source, kwargs):
     assert reconstruct_selected_segments(segment_source(source), ["S1"], **kwargs) == ""
+
+
+@pytest.mark.parametrize(("source", "expected"), [
+    ("Rottura vetro in Via delle Ginestre 25, Palermo.", "Via delle Ginestre 25, Palermo"),
+    ("Il guasto è in Corso Italia 8.", "Corso Italia 8"),
+    ("Intervento al secondo piano dell'appartamento.", None),
+    ("Guasto tra Via Roma 12 e Piazza Verdi 5.", None),
+])
+def test_postal_address_fallback_uses_one_explicit_source_address_only(source, expected):
+    assert postal_address_from_source(source) == expected
 
 
 def test_operational_location_segment_remains_selectable_and_exact():

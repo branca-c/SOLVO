@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.api.ai import get_ai_provider
 from app.domain.draft_classification import category_fallback, priority_fallback, reconcile_priority
 from app.models import Category
+from app.models.enums import Priority
 from tests.test_ollama import install_http, response
 from app.services.ai.ollama import OllamaAIProvider
 
@@ -297,6 +298,39 @@ RECONCILIATION_CASES = [
     ('Informazioni generiche', None, None),
     ('Ascensore bloccato; non ci sono scintille né cavi scoperti', 'URGENTE', 'ALTA'),
 ]
+
+
+@pytest.mark.parametrize('text', [
+    'Rottura vetro', 'Rottura di un vetro', 'Rottura del vetro',
+    'Rottura della finestra', 'Rottura di una finestra', 'Rottura della maniglia',
+    'Rottura del rubinetto', 'Vetro rotto', 'Finestra rotta', 'Rubinetto rotto',
+])
+def test_concrete_breakage_is_an_active_media_fault(text):
+    assert priority_fallback(text) == 'MEDIA'
+    assert reconcile_priority(text, None) == 'MEDIA'
+
+
+def test_planned_breakage_does_not_override_programmable_priority():
+    text = 'Manutenzione programmata per la rottura della maniglia.'
+
+    assert priority_fallback(text) == 'PROGRAMMABILE'
+    assert reconcile_priority(text, None) == 'PROGRAMMABILE'
+
+
+def test_generic_information_about_breakage_is_not_an_active_fault():
+    assert reconcile_priority('Vorrei informazioni sulla rottura.', None) is None
+    assert reconcile_priority('Documentazione relativa alla rottura.', None) is None
+    assert reconcile_priority('Statistiche sulle rotture.', None) is None
+
+
+def test_real_groq_breakage_report_uses_media_priority():
+    source = (
+        'Sono Chiara Branca, telefono 328 66 77 356, email '
+        'chiara.branca1991@gmail.com. Vorrei segnalare la rottura di un vetro al '
+        "secondo piano dell'appartamento in Via delle Ginestre 25, Palermo."
+    )
+
+    assert reconcile_priority(source, None) == Priority.MEDIA
 
 
 RUNTIME_AUDIO_TRANSCRIPT = (

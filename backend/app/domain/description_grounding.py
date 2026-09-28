@@ -29,14 +29,27 @@ _ABBREVIATIONS = frozenset({
 })
 _PHONE_IN_SEGMENT = re.compile(r"\+?\d[\d\s().-]{5,}\d")
 _EMAIL_IN_SEGMENT = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
-_POSTAL_ADDRESS_ONLY = re.compile(
-    r"\s*(?:(?:indirizzo|sede|luogo)\s*:\s*)?"
+_POSTAL_ADDRESS_VALUE = (
     r"(?:via|viale|corso|piazza|vicolo|largo)\s+[^.;!?\n]*?\d+[A-Za-z]?"
     r"(?:\s+(?:a|in)\s+(?-i:[A-ZÀ-Ý][\wà-ÿ'’-]*(?:\s+[A-ZÀ-Ý][\wà-ÿ'’-]*){0,2}))?"
     r"(?:,\s*(?-i:[A-ZÀ-Ý][\wà-ÿ'’-]*(?:\s+[A-ZÀ-Ý][\wà-ÿ'’-]*){0,2}))?"
-    r"(?:\s*\([A-Za-z]{2}\))?\s*[.,;]?\s*\Z",
+    r"(?:\s*\([A-Za-z]{2}\))?"
+)
+_POSTAL_ADDRESS_ONLY = re.compile(
+    r"\s*(?:(?:indirizzo|sede|luogo)\s*:\s*)?"
+    + _POSTAL_ADDRESS_VALUE + r"\s*[.,;]?\s*\Z",
     re.IGNORECASE,
 )
+_POSTAL_ADDRESS_IN_SOURCE = re.compile(r"\b(" + _POSTAL_ADDRESS_VALUE + r")", re.IGNORECASE)
+
+
+def postal_address_from_source(source_text: str) -> str | None:
+    """Return one explicit, bounded postal address or nothing when ambiguous."""
+    matches = {
+        re.sub(r"\s+", " ", match.group(1)).strip(" ,.;")
+        for match in _POSTAL_ADDRESS_IN_SOURCE.finditer(source_text)
+    }
+    return matches.pop() if len(matches) == 1 else None
 
 
 def _append_segment(

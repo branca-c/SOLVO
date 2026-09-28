@@ -19,6 +19,12 @@ CATEGORY_SIGNALS = {
     "Arredi": r"mobil[ei]|scrivani[ae]|sedi[ae]|armadi[oi]",
 }
 
+BREAKAGE_SIGNAL = (
+    r"rott[oaie]|rottur[ae]\s+(?:(?:del(?:la)?|dell['’]|di)\s+"
+    r"(?:(?:un|una|uno|il|la|lo|l['’])\s+)?){0,1}"
+    r"(?:vetr[oi]|vetrat[ae]|finestr[ae]|manigli[ae]|rubinett[oi]|port[ae]|serratur[ae]|infiss[oi])"
+)
+
 
 def normalize(value: str) -> str:
     return " ".join(re.findall(r"\w+", value.casefold()))
@@ -144,7 +150,7 @@ def is_active_fault_report(source_text: str) -> bool:
     active_fault = (
         r"guast[oaie]|malfunzionament[oi]|problem[ai]|black ?out|perdita|gocciola"
         r"|non funziona|non raffredda|non si apre|non si chiude|connession[ei]"
-        r"|interruzione|disservizio"
+        r"|interruzione|disservizio|" + BREAKAGE_SIGNAL
     )
     return any(_priority_positive(active_fault, clause) for clause in _priority_clauses(source_text))
 
@@ -220,22 +226,26 @@ def priority_fallback(text: str) -> Priority | None:
         for clause in clauses
     ]
     # Remove only the mild phrase itself; a separate concrete failure still wins.
+    planned_intervention = (
+        r"controllo (?:periodico|programmato)|manutenzione (?:programmata|preventiva)|intervento pianificato"
+        r"|sostituzione preventiva|verniciatura|regolazione non urgente|programmabile"
+    )
     for clause, is_minor in zip(clauses, minor_clauses):
         active_clause = re.sub(r"\b(?:" + minor + r")\b", " ", clause) if is_minor else clause
         if (_priority_positive(
-            r"guast[oaie]|malfunzionament[oi]|rott[oaie]|perdita|perde(?: acqua)?|gocciola"
+            r"guast[oaie]|malfunzionament[oi]|" + BREAKAGE_SIGNAL + r"|perdita|perde(?: acqua)?|gocciola"
             r"|non (?:funzionante|funzionanti|funziona|funzionano|raffredda|raffreddano|scarica|si apre|si chiude)"
             r"|non (?:utilizzabile|usabile)|inutilizzabile"
             r"|(?:riscaldamento|condizionatore|rete|internet) (?:è )?(?:assente|fuori servizio)",
             active_clause,
         )):
+            if (_priority_positive(planned_intervention, active_clause)
+                    and _priority_positive(BREAKAGE_SIGNAL, active_clause)):
+                continue
             return Priority.MEDIA
     if any(minor_clauses):
         return Priority.BASSA
-    if any(_priority_positive(
-        r"controllo (?:periodico|programmato)|manutenzione (?:programmata|preventiva)|intervento pianificato"
-        r"|sostituzione preventiva|verniciatura|regolazione non urgente|programmabile", clause,
-    ) for clause in clauses):
+    if any(_priority_positive(planned_intervention, clause) for clause in clauses):
         return Priority.PROGRAMMABILE
     if is_active_fault_report(text):
         return Priority.MEDIA
