@@ -7,6 +7,7 @@ import { Dashboard } from '../pages/Dashboard'
 import { WorkOrders } from '../pages/WorkOrders'
 import { WorkOrderDetail } from '../pages/WorkOrderDetail'
 import { CreateWorkOrder } from '../pages/CreateWorkOrder'
+import { Layout } from '../components/Layout'
 import { api } from '../services/api'
 import { clearCategoriesCache } from '../hooks/useCategories'
 import { order } from './fixtures'
@@ -22,6 +23,16 @@ beforeEach(() => {
   vi.spyOn(api, 'assignments').mockResolvedValue([])
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
+it('opens and closes the compact navigation menu without changing routes', async () => {
+  render(<Layout title="Dashboard" section="dashboard"><p>Contenuto</p></Layout>)
+  const menu = screen.getByRole('button', { name: 'Menu' })
+  expect(menu.getAttribute('aria-expanded')).toBe('false')
+  await userEvent.click(menu)
+  expect(menu.getAttribute('aria-expanded')).toBe('true')
+  expect(screen.getByRole('navigation', { name: 'Navigazione principale' }).closest('aside')?.className).toContain('sidebar-open')
+  await userEvent.click(screen.getByRole('link', { name: 'ODL' }))
+  expect(menu.getAttribute('aria-expanded')).toBe('false')
+})
 it('renders dashboard counts and navigates to an ODL from its link', async () => {
   render(<App />)
   expect(await screen.findByRole('link', { name: order.code })).toBeTruthy()

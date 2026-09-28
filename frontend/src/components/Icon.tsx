@@ -1,4 +1,4 @@
-export type IconName = 'dashboard' | 'orders' | 'users' | 'settings' | 'plus' | 'arrow' | 'check' | 'clock' | 'urgent' | 'refresh'
+export type IconName = 'dashboard' | 'orders' | 'users' | 'settings' | 'plus' | 'arrow' | 'check' | 'clock' | 'urgent' | 'refresh' | 'menu' | 'close'
 const paths: Record<IconName, string> = {
   dashboard: 'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
   orders: 'M8 4H5v17h14V4h-3 M8 3h8v4H8z M8 12h8 M8 16h5',
@@ -9,6 +9,7 @@ const paths: Record<IconName, string> = {
   clock: 'M12 7v5l3 2 M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20',
   urgent: 'M12 8v5 M12 17h.01 M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20',
   refresh: 'M20 7v5h-5 M4 17v-5h5 M6 7a7 7 0 0 1 12-2l2 3 M4 16l2 3a7 7 0 0 0 12-2',
+  menu: 'M4 7h16 M4 12h16 M4 17h16', close: 'M6 6l12 12 M18 6L6 18',
 }
 export function Icon({ name }: { name: IconName }) {
   return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>

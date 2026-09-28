@@ -75,7 +75,7 @@ export function AudioIntake({ disabled, onDraft, onBusy }: {
     finally { finish() }
   }
   const locked = disabled || state !== 'idle'
-  return <section className="surface ai-intake" aria-label="Intake audio">
+  return <section className="surface ai-intake audio-intake" aria-label="Intake audio">
     <h2>Descrivi il guasto a voce</h2>
     <p>Carica o registra un audio (WebM, WAV, MP3, MP4; massimo 10 MiB). La trascrizione compila una bozza da rivedere e confermare.</p>
     <label>File audio<input type="file" accept="audio/webm,audio/wav,audio/x-wav,audio/mpeg,audio/mp4" disabled={locked}
