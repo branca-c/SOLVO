@@ -1,10 +1,12 @@
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from pydantic import Field, PostgresDsn, SecretStr
+from pydantic import Field, PostgresDsn, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_OLLAMA_KEEP_ALIVE = "30m"
+DEFAULT_CORS_ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -16,6 +18,7 @@ class Settings(BaseSettings):
     app_debug: bool = False
     app_log_level: str = "INFO"
     database_url: PostgresDsn
+    cors_allowed_origins: str = DEFAULT_CORS_ALLOWED_ORIGINS
     assignment_action_secret: SecretStr = SecretStr("")
     technician_action_base_url: str = "http://127.0.0.1:5173"
     technician_action_token_ttl_minutes: int = Field(default=1440, ge=1, le=10080)
@@ -46,6 +49,33 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @field_validator("cors_allowed_origins")
+    @classmethod
+    def validate_cors_allowed_origins(cls, value: str) -> str:
+        origins = [origin.strip().rstrip("/") for origin in value.split(",") if origin.strip()]
+        if not origins:
+            raise ValueError("CORS_ALLOWED_ORIGINS deve contenere almeno un'origine HTTP/HTTPS.")
+        for origin in origins:
+            parsed = urlsplit(origin)
+            if (
+                origin == "*" or parsed.scheme not in {"http", "https"}
+                or not parsed.netloc or parsed.path or parsed.query or parsed.fragment
+            ):
+                raise ValueError("CORS_ALLOWED_ORIGINS accetta solo origini HTTP/HTTPS esplicite.")
+        return ",".join(origins)
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return self.cors_allowed_origins.split(",")
+
+    @property
+    def sqlalchemy_database_url(self) -> str:
+        """Use the installed psycopg driver for standard PostgreSQL/Neon URLs."""
+        url = str(self.database_url)
+        if url.startswith("postgresql://"):
+            return "postgresql+psycopg://" + url.removeprefix("postgresql://")
+        return url
 
 
 @lru_cache

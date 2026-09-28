@@ -656,3 +656,42 @@ summary is primary and missing summaries stay empty. Human review and explicit
 confirmation remain mandatory; analysis only reads the database and creates no ODL.
 No frontend, schema, migration, Whisper, Telegram or AWS changes are required.
 The technical PDF is not regenerated.
+
+
+## Public-demo backend deployment target
+
+The first public-demo backend target is one **Render Free Web Service** backed by a
+managed **Neon PostgreSQL** database. `render.yaml` defines only that backend service:
+its repository root is `backend/`, it installs `requirements.txt` and runs
+`alembic upgrade head` in the Render build command, then starts
+`uvicorn app.main:app --host 0.0.0.0 --port $PORT`. Migrations are deliberately not
+run on application startup, avoiding concurrent process-start races. Render Free does
+not support a pre-deploy command, so the idempotent Alembic upgrade is an explicit
+part of its one backend build step. The Blueprint pins the already-used Python 3.12.3
+with `PYTHON_VERSION`. Render checks
+the lightweight unauthenticated `GET /health` endpoint; it returns `{"status":"ok"}`
+without database queries, Groq, Telegram, Ollama, or Whisper initialization.
+
+`DATABASE_URL` is required at runtime and may be a standard Neon
+`postgresql://...?...sslmode=require` URL. Settings normalize that scheme to the
+installed SQLAlchemy `postgresql+psycopg` dialect without discarding query options.
+No database credential, host, or TLS option is committed. Render must also receive
+`CORS_ALLOWED_ORIGINS` as a comma-separated explicit list (for example the future
+Render static-site URL); local defaults retain `http://localhost:5173` and
+`http://127.0.0.1:5173`. Wildcard origins are rejected because credentials are enabled.
+
+The blueprint selects existing Groq text and transcription providers and configures
+their public model names, while `GROQ_API_KEY` remains a Render secret. Required
+deployment variables are `DATABASE_URL`, `CORS_ALLOWED_ORIGINS`, `GROQ_API_KEY`,
+`AI_PROVIDER=groq`, `TRANSCRIPTION_PROVIDER=groq`, `GROQ_MODEL`,
+`GROQ_TRANSCRIPTION_MODEL`, and (optionally) `GROQ_TIMEOUT_SECONDS`. Technician
+links will later require a deployed frontend `TECHNICIAN_ACTION_BASE_URL` and the
+existing `ASSIGNMENT_ACTION_SECRET`; this task does not change Telegram behavior.
+
+Cloudflare Quick Tunnel and `cloudflared` remain local development/demo tooling
+only. The deployed backend has no tunnel dependency or committed tunnel hostname.
+The current application writes no uploaded audio to durable storage: multipart
+uploads are processed in memory/temporary framework spooling and closed after the
+request. PostgreSQL is the only required persistent application state. The existing
+single-process in-memory WebSocket manager is suitable only for this one Render
+instance; a future multi-instance deployment needs shared fan-out.
