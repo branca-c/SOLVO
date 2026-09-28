@@ -6,7 +6,7 @@ from app.services.timing import timed
 from app.schemas.work_order_draft import AudioWorkOrderDraft
 from app.services.ai.provider import AIProvider
 from app.services.transcription import (
-    InvalidAudioError, NoSpeechError, MockTranscriptionProvider,
+    GroqTranscriptionProvider, InvalidAudioError, NoSpeechError, MockTranscriptionProvider,
     LocalWhisperTranscriptionProvider, TranscriptionProvider, TranscriptionUnavailableError,
 )
 from app.services.work_order_drafts import build_draft
@@ -49,6 +49,8 @@ def build_audio_draft(
         if isinstance(transcription, MockTranscriptionProvider):
             draft.warnings = ["Trascrizione simulata: testo dimostrativo, non riconosciuto dall’audio.", *draft.warnings][:10]
         source = "mock" if isinstance(transcription, MockTranscriptionProvider) else (
-            "local_whisper" if isinstance(transcription, LocalWhisperTranscriptionProvider) else None
+            "local_whisper" if isinstance(transcription, LocalWhisperTranscriptionProvider) else (
+                "groq" if isinstance(transcription, GroqTranscriptionProvider) else None
+            )
         )
         return AudioWorkOrderDraft(transcript=transcript, draft=draft, transcription_source=source)

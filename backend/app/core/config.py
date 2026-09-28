@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     groq_timeout_seconds: float = 60
     transcription_provider: str = "mock"
     transcription_mock_text: str = "Perdita di acqua dal tubo del bagno."
+    groq_transcription_model: str = "whisper-large-v3-turbo"
     whisper_model_size: str = "small"
     whisper_device: str = "auto"
     whisper_compute_type: str = "auto"

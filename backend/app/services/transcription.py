@@ -1,8 +1,17 @@
 """Audio-only providers: no persistence or workflow access."""
 from functools import lru_cache
 from io import BytesIO
+import math
 from threading import Lock
 from typing import Protocol
+from urllib.parse import urlsplit
+
+import httpx
+
+from app.services.timing import timed
+
+
+DEFAULT_GROQ_TRANSCRIPTION_MODEL = "whisper-large-v3-turbo"
 
 
 class TranscriptionUnavailableError(Exception):
@@ -33,6 +42,85 @@ class MockTranscriptionProvider:
 
     def transcribe(self, audio: bytes, content_type: str) -> str:
         return self.text
+
+
+class GroqTranscriptionProvider:
+    """Groq speech-to-text adapter; no persistence or text-draft generation."""
+
+    def __init__(self, base_url: str, api_key: str,
+                 model: str = DEFAULT_GROQ_TRANSCRIPTION_MODEL,
+                 timeout: float = 60, language: str = "it"):
+        if not api_key.strip():
+            raise TranscriptionUnavailableError(
+                "Configura GROQ_API_KEY quando TRANSCRIPTION_PROVIDER=groq."
+            )
+        if not model.strip():
+            raise TranscriptionUnavailableError(
+                "Configura GROQ_TRANSCRIPTION_MODEL quando TRANSCRIPTION_PROVIDER=groq."
+            )
+        try:
+            parsed = urlsplit(base_url)
+            parsed.port
+        except ValueError as exc:
+            raise TranscriptionUnavailableError(
+                "GROQ_BASE_URL non valido: verifica host e porta."
+            ) from exc
+        if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                or parsed.username or parsed.password or parsed.query or parsed.fragment):
+            raise TranscriptionUnavailableError("GROQ_BASE_URL non valido: configura un URL HTTP/HTTPS.")
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise TranscriptionUnavailableError("GROQ_TIMEOUT_SECONDS deve essere un numero positivo finito.")
+        if not language.strip():
+            raise TranscriptionUnavailableError("Lingua della trascrizione Groq non valida.")
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key.strip()
+        self.model = model.strip()
+        self.timeout = timeout
+        self.language = language.strip().lower()
+
+    def transcribe(self, audio: bytes, content_type: str) -> str:
+        if not audio:
+            raise InvalidAudioError("Il file audio è vuoto.")
+        filename = {
+            "audio/webm": "recording.webm",
+            "audio/wav": "recording.wav",
+            "audio/x-wav": "recording.wav",
+            "audio/mpeg": "recording.mp3",
+            "audio/mp4": "recording.mp4",
+        }.get(content_type, "recording")
+        try:
+            with timed("groq_transcription_request"), httpx.Client(
+                timeout=self.timeout, trust_env=False,
+            ) as client:
+                response = client.post(
+                    self.base_url + "/audio/transcriptions",
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    data={"model": self.model, "language": self.language},
+                    files={"file": (filename, audio, content_type)},
+                )
+        except httpx.TimeoutException as exc:
+            raise TranscriptionUnavailableError(
+                "Groq: tempo di attesa della trascrizione scaduto. Riprova o usa il testo."
+            ) from exc
+        except httpx.RequestError as exc:
+            raise TranscriptionUnavailableError(
+                "Groq non raggiungibile. Verifica connessione e GROQ_BASE_URL."
+            ) from exc
+        if not response.is_success:
+            raise TranscriptionUnavailableError(
+                "Groq non ha completato la trascrizione. Verifica configurazione e disponibilità del provider."
+            )
+        try:
+            transcript = response.json()["text"]
+        except (ValueError, TypeError, KeyError) as exc:
+            raise TranscriptionUnavailableError(
+                "Risposta Groq di trascrizione non valida. Riprova o usa il testo."
+            ) from exc
+        if not isinstance(transcript, str) or not transcript.strip():
+            raise TranscriptionUnavailableError(
+                "Risposta Groq di trascrizione non valida. Riprova o usa il testo."
+            )
+        return transcript.strip()
 
 
 class LocalWhisperTranscriptionProvider:
@@ -141,11 +229,19 @@ _provider_lock = Lock()
 
 def create_transcription_provider(name: str, mock_text: str, *, model_size: str = "small",
                                   device: str = "auto", compute_type: str = "auto",
-                                  language: str = "it", beam_size: int = 3) -> TranscriptionProvider:
+                                  language: str = "it", beam_size: int = 3,
+                                  groq_api_key: str = "",
+                                  groq_base_url: str = "https://api.groq.com/openai/v1",
+                                  groq_model: str = DEFAULT_GROQ_TRANSCRIPTION_MODEL,
+                                  groq_timeout: float = 60) -> TranscriptionProvider:
     selected = name.strip().casefold()
     if selected in {"mock", "fake"}:
         return MockTranscriptionProvider(mock_text)
-    if selected == "local_whisper":
+    if selected in {"local", "local_whisper"}:
         with _provider_lock:
             return _local_provider(model_size, device, compute_type, language, beam_size)
-    raise TranscriptionUnavailableError("Provider di trascrizione sconosciuto. Usa mock o local_whisper.")
+    if selected == "groq":
+        return GroqTranscriptionProvider(
+            groq_base_url, groq_api_key, groq_model, groq_timeout, language,
+        )
+    raise TranscriptionUnavailableError("Provider di trascrizione sconosciuto. Usa mock, local_whisper o groq.")

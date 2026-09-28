@@ -80,6 +80,6 @@ class WorkOrderDraft(_DraftFields):
 
 
 class AudioWorkOrderDraft(BaseModel):
-    transcription_source: Literal["mock", "local_whisper"] | None = None
+    transcription_source: Literal["mock", "local_whisper", "groq"] | None = None
     transcript: str
     draft: WorkOrderDraft

@@ -55,6 +55,10 @@ def get_transcription_provider(
             model_size=settings.whisper_model_size, device=settings.whisper_device,
             compute_type=settings.whisper_compute_type, language=settings.whisper_language,
             beam_size=settings.whisper_beam_size,
+            groq_api_key=settings.groq_api_key.get_secret_value(),
+            groq_base_url=settings.groq_base_url,
+            groq_model=settings.groq_transcription_model,
+            groq_timeout=settings.groq_timeout_seconds,
         )
     except TranscriptionUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

@@ -526,7 +526,10 @@ are unchanged. Email-specific grounding matches punctuation exactly; a validated
 audio reconstruction supplies separate evidence for spoken separator conversion.
 
 LocalWhisperTranscriptionProvider implements the existing audio-bytes transcription
-port without database access. Lazy imports isolate optional runtime initialization
+port without database access. GroqTranscriptionProvider uses the configured
+OpenAI-compatible `/audio/transcriptions` endpoint with server-side credentials,
+temporary multipart audio bytes, configured Italian language and no persistence;
+it returns only transcript text and never invokes text-draft generation. Lazy imports isolate optional runtime initialization
 from mock use. The provider factory caches local adapters by model/device/compute/
 language/beam size (bounded to four configurations); each owns a lazy model and a lock serializing
 first load and inference. Factory construction is also locked to avoid duplicate
@@ -549,7 +552,7 @@ The first model load can download/cache weights using faster-whisper; provisione
 local model directories support fully offline initialization.
 
 Audio orchestration still reuses build_draft and category resolution with no writes.
-Additive nullable transcription_source metadata distinguishes mock/local_whisper;
+Additive nullable transcription_source metadata distinguishes mock/local_whisper/groq;
 the browser keeps MediaRecorder unchanged and displays the corresponding source.
 Tests replace faster-whisper/CTranslate2 modules with stubs and never download models.
 The sole new direct dependency is faster-whisper (including its decoding/inference
