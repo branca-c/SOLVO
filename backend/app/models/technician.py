@@ -28,10 +28,10 @@ class Technician(Base):
     last_name: Mapped[str] = mapped_column(String(100))
     phone: Mapped[str] = mapped_column(String(32))
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"), index=True)
     escalation_order: Mapped[int]
     is_team_leader: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     category: Mapped[Category] = relationship(back_populates="technicians")
     assignments: Mapped[list[Assignment]] = relationship(back_populates="technician")
-

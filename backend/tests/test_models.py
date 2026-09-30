@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import String
 from sqlalchemy.dialects import postgresql
 
 from app.db.base import Base
@@ -118,3 +119,11 @@ def test_timestamps_and_counters_have_database_defaults() -> None:
     assert Assignment.__table__.c.sent_at.server_default is not None
     assert Reminder.__table__.c.created_at.server_default is not None
     assert WorkOrderHistory.__table__.c.created_at.server_default is not None
+
+
+def test_technician_telegram_destination_is_nullable_string() -> None:
+    column = Technician.__table__.c.telegram_chat_id
+
+    assert column.nullable is True
+    assert isinstance(column.type, String)
+    assert column.type.length >= 20

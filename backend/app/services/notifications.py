@@ -34,28 +34,36 @@ class Delivery:
 
 
 class NotificationProvider(Protocol):
-    def send(self, technician_id: int, message: str) -> Delivery: ...
+    def send(
+        self, technician_id: int, message: str, *, destination: str | None = None
+    ) -> Delivery: ...
 
 
 class MockNotificationProvider:
-    def send(self, technician_id: int, message: str) -> Delivery:
+    def send(
+        self, technician_id: int, message: str, *, destination: str | None = None
+    ) -> Delivery:
         digest = hashlib.sha256(f'{technician_id}\n{message}'.encode()).hexdigest()[:24]
         return Delivery('mock', f'mock-{digest}', 'simulated')
 
 
 class TelegramNotificationProvider:
-    def __init__(self, bot_token: str, demo_chat_id: str):
+    def __init__(self, bot_token: str):
         self._bot_token = bot_token
-        self._demo_chat_id = demo_chat_id
 
-    def send(self, technician_id: int, message: str) -> Delivery:
-        # Demo shortcut: all routed technicians share the configured destination.
+    def send(
+        self, technician_id: int, message: str, *, destination: str | None = None
+    ) -> Delivery:
+        if not destination or not re.fullmatch(r'-?[1-9][0-9]*', destination):
+            raise NotificationUnavailableError(
+                'Destinazione Telegram non disponibile per il tecnico assegnato.'
+            )
         try:
             with httpx.Client(timeout=10.0) as client:
                 response = client.post(
                     f'https://api.telegram.org/bot{self._bot_token}/sendMessage',
                     json={
-                        'chat_id': self._demo_chat_id,
+                        'chat_id': destination,
                         'text': message,
                         'link_preview_options': {'is_disabled': True},
                     },
@@ -82,10 +90,9 @@ def create_notification_provider(settings: Settings) -> NotificationProvider:
         return MockNotificationProvider()
     if name == 'telegram':
         token = settings.telegram_bot_token.get_secret_value().strip()
-        chat_id = settings.telegram_demo_chat_id.strip()
-        if not re.fullmatch(r'[0-9]+:[A-Za-z0-9_-]+', token) or not re.fullmatch(r'-?[1-9][0-9]*', chat_id):
+        if not re.fullmatch(r'[0-9]+:[A-Za-z0-9_-]+', token):
             raise NotificationUnavailableError(
-                'Configurazione Telegram incompleta o non valida: configura TELEGRAM_BOT_TOKEN e TELEGRAM_DEMO_CHAT_ID.'
+                'Configurazione Telegram incompleta o non valida: configura TELEGRAM_BOT_TOKEN.'
             )
-        return TelegramNotificationProvider(token, chat_id)
+        return TelegramNotificationProvider(token)
     raise NotificationUnavailableError('Provider notifiche non disponibile.')

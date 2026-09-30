@@ -20,6 +20,7 @@ class TechnicianResponse(BaseModel):
     category_name: str
     escalation_order: int
     is_team_leader: bool
+    telegram_linked: bool
 
 
 class TechnicianUpdate(BaseModel):

@@ -5,7 +5,21 @@ from app.models import Assignment
 from app.schemas.public_assignment import NotificationResponse, PublicAssignment
 from app.services import assignments
 from app.services.assignment_links import action_url
-from app.services.notifications import create_notification_provider
+from app.services.notifications import (
+    NotificationUnavailableError,
+    TelegramNotificationProvider,
+    create_notification_provider,
+)
+
+
+def _telegram_destination(telegram_chat_id: str | None, demo_chat_id: str) -> str:
+    """Prefer the assigned technician's private destination over the demo fallback."""
+    destination = (telegram_chat_id or '').strip() or demo_chat_id.strip()
+    if not destination:
+        raise NotificationUnavailableError(
+            'Destinazione Telegram non disponibile: collega il tecnico o configura TELEGRAM_DEMO_CHAT_ID.'
+        )
+    return destination
 
 
 def public_details(db: Session, assignment_id: int) -> PublicAssignment:
@@ -32,7 +46,13 @@ def notify(db: Session, assignment_id: int, settings: Settings) -> NotificationR
         url = action_url(assignment.id, settings)
         provider = create_notification_provider(settings)
         message = f'SOLVO — Nuovo intervento\nODL: {order.code}\nPriorità: {order.priority.value}\nIndirizzo: {order.fault_address}\nCategoria: {order.category.name}\nApri intervento: {url}'
-        result = provider.send(assignment.technician_id, message)
+        if isinstance(provider, TelegramNotificationProvider):
+            destination = _telegram_destination(
+                assignment.technician.telegram_chat_id, settings.telegram_demo_chat_id
+            )
+            result = provider.send(assignment.technician_id, message, destination=destination)
+        else:
+            result = provider.send(assignment.technician_id, message)
         assignments._history(
             db, order.id, 'ASSIGNMENT_NOTIFICATION_SENT',
             f'Assegnazione #{assignment.id}: notifica {result.provider}, {result.status}, riferimento {result.message_id}.',

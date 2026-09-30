@@ -34,6 +34,7 @@ def list_technicians(
             email=technician.email, category_id=technician.category_id,
             category_name=name, escalation_order=technician.escalation_order,
             is_team_leader=technician.is_team_leader,
+            telegram_linked=bool(technician.telegram_chat_id and technician.telegram_chat_id.strip()),
         )
         for technician, name in db.execute(query)
     ]
@@ -55,4 +56,5 @@ def update_technician(technician_id: int, data: TechnicianUpdate, db: Database):
     return TechnicianResponse(id=technician.id, first_name=technician.first_name,
         last_name=technician.last_name, phone=technician.phone, email=technician.email,
         category_id=technician.category_id, category_name=technician.category.name,
-        escalation_order=technician.escalation_order, is_team_leader=technician.is_team_leader)
+        escalation_order=technician.escalation_order, is_team_leader=technician.is_team_leader,
+        telegram_linked=bool(technician.telegram_chat_id and technician.telegram_chat_id.strip()))

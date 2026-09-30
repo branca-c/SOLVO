@@ -15,6 +15,30 @@ def test_categories_read_only_and_ordered(api):
     assert client.post('/api/categories', json={'name': 'New'}).status_code == 405
 
 
+def test_technician_telegram_link_is_publicly_boolean_only(api):
+    client, engine = api
+    with Session(engine) as db:
+        unlinked = Technician(
+            first_name='No', last_name='Telegram', phone='100', category_id=1,
+            escalation_order=1, is_team_leader=False,
+        )
+        linked = Technician(
+            first_name='Con', last_name='Telegram', phone='200', category_id=1,
+            escalation_order=2, is_team_leader=False, telegram_chat_id='-1001234567890',
+        )
+        db.add_all([unlinked, linked])
+        db.flush()
+        linked_id = linked.id
+        db.commit()
+
+    technicians = client.get('/api/technicians', params={'category_id': 1}).json()
+    assert [technician['telegram_linked'] for technician in technicians] == [False, True]
+    assert all('telegram_chat_id' not in technician for technician in technicians)
+    assert client.patch(
+        f"/api/technicians/{linked_id}", json={'telegram_chat_id': '123'}
+    ).status_code == 422
+
+
 def test_demo_seed_and_technician_api(api):
     client, engine = api
     with Session(engine) as db:

@@ -3,7 +3,9 @@ import httpx
 from pydantic import SecretStr
 
 from app.core.config import get_settings
+from app.models import Technician
 from app.services.assignment_links import sign_assignment, validate_token, InvalidActionTokenError
+from app.services.assignment_notifications import _telegram_destination
 from app.services.notifications import MockNotificationProvider, TelegramNotificationProvider, NotificationUnavailableError
 from tests.test_assignments_api import configure, start, history, assignment_url
 from tests.test_work_orders_api import create
@@ -202,6 +204,52 @@ def test_telegram_notify_request_and_server_only_token(pending, monkeypatch, cap
     assert validate_token(token, settings) == assignment['id']
 
 
+def test_telegram_notify_prefers_assigned_technician_chat(api, configuration, monkeypatch, caplog):
+    import json
+    from sqlalchemy.orm import Session
+
+    client, engine = api
+    configure(engine)
+    order = create(client)
+    assignment = start(client, order)
+    with Session(engine) as db:
+        db.get(Technician, assignment['technician_id']).telegram_chat_id = '-1001234567890'
+        db.commit()
+    monkeypatch.setattr(configuration, 'notification_provider', 'telegram')
+    monkeypatch.setattr(configuration, 'telegram_bot_token', SecretStr('123456:test-private-token'))
+    monkeypatch.setattr(configuration, 'telegram_demo_chat_id', '987654')
+    requests = []
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        httpx, 'Client',
+        lambda **kwargs: real_client(
+            transport=httpx.MockTransport(
+                lambda request: requests.append(request) or httpx.Response(200, json={'ok': True, 'result': {'message_id': 42}})
+            ),
+            **kwargs,
+        ),
+    )
+    with caplog.at_level('DEBUG'):
+        assert client.post(f"/api/assignments/{assignment['id']}/notify").status_code == 200
+    assert json.loads(requests[0].content)['chat_id'] == '-1001234567890'
+    assert '-1001234567890' not in caplog.text
+    events = history(client, order)
+    assert '-1001234567890' not in str(events)
+
+
+def test_telegram_notify_without_destination_is_controlled_error(pending, monkeypatch):
+    client, order, assignment, _ = pending
+    settings = get_settings()
+    monkeypatch.setattr(settings, 'notification_provider', 'telegram')
+    monkeypatch.setattr(settings, 'telegram_bot_token', SecretStr('123456:test-private-token'))
+    monkeypatch.setattr(settings, 'telegram_demo_chat_id', '')
+    before = history(client, order)
+    response = client.post(f"/api/assignments/{assignment['id']}/notify")
+    assert response.status_code == 503
+    assert 'Destinazione Telegram non disponibile' in response.json()['detail']
+    assert history(client, order) == before
+
+
 @pytest.mark.parametrize('status,body', [
     (401, {'description': 'private'}), (429, {'ok': False}),
     (200, {'ok': False}), (200, []), (200, {'ok': True, 'result': None}),
@@ -212,14 +260,13 @@ def test_telegram_error_sanitized(monkeypatch, status, body):
     real_client = httpx.Client
     monkeypatch.setattr(httpx, 'Client', lambda **kwargs: real_client(transport=httpx.MockTransport(lambda request: httpx.Response(status, json=body)), **kwargs))
     with pytest.raises(NotificationUnavailableError) as error:
-        TelegramNotificationProvider('123:private', '987').send(1, 'text')
+        TelegramNotificationProvider('123:private').send(1, 'text', destination='987')
     assert 'private' not in str(error.value)
     assert error.value.__suppress_context__
 
 
 @pytest.mark.parametrize('provider,token,chat', [
-    ('telegram', '', '987'), ('telegram', '123:token', ''),
-    ('telegram', 'invalid/token', '987'), ('telegram', '123:token', 'invalid'),
+    ('telegram', '', '987'), ('telegram', 'invalid/token', '987'),
     ('unknown', '', ''),
 ])
 def test_invalid_provider_configuration_does_not_mutate(pending, monkeypatch, provider, token, chat):
@@ -232,7 +279,7 @@ def test_invalid_provider_configuration_does_not_mutate(pending, monkeypatch, pr
     response = client.post(f"/api/assignments/{assignment['id']}/notify")
     assert response.status_code == 503
     if provider == 'telegram':
-        assert 'TELEGRAM_BOT_TOKEN e TELEGRAM_DEMO_CHAT_ID' in response.json()['detail']
+        assert 'TELEGRAM_BOT_TOKEN' in response.json()['detail']
     assert history(client, order) == before
 
 
@@ -240,6 +287,13 @@ def test_mock_is_deterministic():
     provider = MockNotificationProvider()
     assert provider.send(1, 'message') == provider.send(1, 'message')
     assert provider.send(1, 'message') != provider.send(2, 'message')
+
+
+def test_telegram_destination_prefers_binding_then_demo_fallback():
+    assert _telegram_destination('-1001234567890', '987654') == '-1001234567890'
+    assert _telegram_destination(None, '987654') == '987654'
+    with pytest.raises(NotificationUnavailableError, match='Destinazione Telegram non disponibile'):
+        _telegram_destination(None, '')
 
 
 def test_telegram_timeout_is_not_retried(monkeypatch):
@@ -250,7 +304,7 @@ def test_telegram_timeout_is_not_retried(monkeypatch):
     real_client = httpx.Client
     monkeypatch.setattr(httpx, 'Client', lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
     with pytest.raises(NotificationUnavailableError, match='Invio Telegram non confermato'):
-        TelegramNotificationProvider('123:private', '987').send(1, 'text')
+        TelegramNotificationProvider('123:private').send(1, 'text', destination='987')
     assert len(calls) == 1
 
 

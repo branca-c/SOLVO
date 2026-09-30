@@ -286,8 +286,10 @@ provider, message ID, submission status and action URL. A meaningful history eve
 records successful submission or simulation. Provider errors return 503 without a
 false success history event. Mock is default and performs no external calls; the
 Telegram Bot API adapter sends HTTPS messages to the server-configured numeric
-TELEGRAM_DEMO_CHAT_ID. All demo technician notifications share this destination;
-the Technician model is unchanged. Telegram is the selected MVP/demo transport.
+Telegram destination. A technician with a non-empty private `telegram_chat_id`
+receives the notification there; otherwise the server-side `TELEGRAM_DEMO_CHAT_ID`
+remains the temporary demo fallback. The chat ID is never returned by normal APIs
+or recorded in history. Telegram is the selected MVP/demo transport.
 Submission does not claim confirmed delivery; no receipt webhook is implemented.
 The signed action link and mobile page remain the response mechanism.
 Cloudflare Quick Tunnel provides temporary phone-accessible demo URLs configured
@@ -378,9 +380,11 @@ and nullable email. Blank required names/phone, null required fields, and extra
 fields return 422; missing technician returns 404. Tecnici provides contact
 editing and feedback with immediate refresh. Category, escalation order and
 team-leader role remain read-only configuration; routing rules are unchanged.
-**Technician phone is editable real contact data, but the CURRENT Telegram demo
-transport uses TELEGRAM_DEMO_CHAT_ID, not the technician phone number.**
-No authentication, provider changes or new notification channels are included.
+**Technician phone is editable real contact data.** A private Telegram chat binding
+is stored separately and is deliberately not editable or exposed through this API;
+the response exposes only whether it is linked. Telegram delivery uses that binding
+when present, otherwise `TELEGRAM_DEMO_CHAT_ID`; neither destination is recorded
+in history. No webhook or bot `/start` binding flow is included.
 
 
 ## Textual solleciti and notes presentation

@@ -340,11 +340,14 @@ provider errors omit raw responses, URLs and exception chains. Responses require
 `NOTIFICATION_PROVIDER=mock|telegram` selects the provider without routing changes.
 Unknown providers and incomplete/invalid configuration fail closed with 503.
 
-Demo destination resolution belongs to the Telegram adapter: TELEGRAM_DEMO_CHAT_ID
-is used for every technician ID. No phone-to-chat conversion, model field or migration
-is introduced. The signed link still identifies the actual routed assignment.
-Production identity and reliable delivery work belong only in ROADMAP. No SDK,
-scheduler, background job, Telegram webhook or inline callback is introduced.
+The notification orchestration service resolves a Telegram destination from the
+assigned technician: a non-empty private `telegram_chat_id` takes precedence, and
+`TELEGRAM_DEMO_CHAT_ID` is the temporary fallback. The nullable string field is
+private persistence data; normal technician APIs expose only `telegram_linked` and
+history/logging never contains the destination. If neither is available, delivery
+fails with a controlled unavailable error. The signed link still identifies the
+actual routed assignment. No phone-to-chat conversion, SDK, scheduler, background
+job, Telegram webhook or inline callback is introduced.
 
 For phone demos the Quick Tunnel URL becomes TECHNICIAN_ACTION_BASE_URL and its
 exact hostname is explicitly allowed by Vite using its additional-host environment
