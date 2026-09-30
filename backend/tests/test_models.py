@@ -127,3 +127,7 @@ def test_technician_telegram_destination_is_nullable_string() -> None:
     assert column.nullable is True
     assert isinstance(column.type, String)
     assert column.type.length >= 20
+    assert any(
+        constraint.name == "uq_technicians_telegram_chat_id"
+        for constraint in Technician.__table__.constraints
+    )

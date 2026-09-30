@@ -347,7 +347,16 @@ private persistence data; normal technician APIs expose only `telegram_linked` a
 history/logging never contains the destination. If neither is available, delivery
 fails with a controlled unavailable error. The signed link still identifies the
 actual routed assignment. No phone-to-chat conversion, SDK, scheduler, background
-job, Telegram webhook or inline callback is introduced.
+job or inline callback is introduced.
+
+Telegram chat binding is a separate service from assignment action links. It creates
+a compact HMAC-signed, expiring deep-link payload containing only a technician ID
+and expiry, then validates it with constant-time comparison in the authenticated
+Telegram webhook. The webhook accepts only private `/start` updates and takes the
+chat ID exclusively from Telegram's update. A database unique constraint prevents a
+chat from being linked to multiple technicians; same-chat replay is idempotent and
+different-chat overwrite is refused. Link creation and unlinking return only safe
+status data. Missing binding configuration fails those endpoints closed with 503.
 
 For phone demos the Quick Tunnel URL becomes TECHNICIAN_ACTION_BASE_URL and its
 exact hostname is explicitly allowed by Vite using its additional-host environment

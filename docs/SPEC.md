@@ -290,7 +290,12 @@ Telegram destination. A technician with a non-empty private `telegram_chat_id`
 receives the notification there; otherwise the server-side `TELEGRAM_DEMO_CHAT_ID`
 remains the temporary demo fallback. The chat ID is never returned by normal APIs
 or recorded in history. Telegram is the selected MVP/demo transport.
-Submission does not claim confirmed delivery; no receipt webhook is implemented.
+Technicians can receive a short-lived signed bot deep link. The authenticated
+Telegram webhook accepts private `/start` messages only, binds the chat ID to the
+token's technician, and sends a confirmation. Binding is idempotent for the same
+chat, rejects reassignment or chat reuse, and can be removed through the operator
+API. Chat IDs and binding secrets are never returned, logged, or written to history.
+Submission does not claim confirmed delivery; no delivery receipt webhook is implemented.
 The signed action link and mobile page remain the response mechanism.
 Cloudflare Quick Tunnel provides temporary phone-accessible demo URLs configured
 through TECHNICIAN_ACTION_BASE_URL; it is not production architecture.

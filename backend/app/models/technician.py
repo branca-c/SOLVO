@@ -21,6 +21,7 @@ class Technician(Base):
             "escalation_order",
             name="uq_technicians_category_escalation_order",
         ),
+        UniqueConstraint("telegram_chat_id", name="uq_technicians_telegram_chat_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

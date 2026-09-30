@@ -5,9 +5,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.models import Category, Technician
 from app.schemas.reference_data import CategoryResponse, TechnicianResponse, TechnicianUpdate
+from app.schemas.telegram_binding import TelegramBindingLinkResponse, TelegramBindingStatusResponse
+from app.services.telegram_binding import TelegramBindingConfigurationError, binding_url
 
 router = APIRouter(prefix="/api", tags=["reference-data"])
 Database = Annotated[Session, Depends(get_db)]
@@ -58,3 +61,35 @@ def update_technician(technician_id: int, data: TechnicianUpdate, db: Database):
         category_id=technician.category_id, category_name=technician.category.name,
         escalation_order=technician.escalation_order, is_team_leader=technician.is_team_leader,
         telegram_linked=bool(technician.telegram_chat_id and technician.telegram_chat_id.strip()))
+
+
+@router.post(
+    "/technicians/{technician_id}/telegram-link", response_model=TelegramBindingLinkResponse
+)
+def create_telegram_link(technician_id: int, db: Database):
+    technician = db.get(Technician, technician_id)
+    if technician is None:
+        raise HTTPException(status_code=404, detail="Tecnico non trovato")
+    if technician.telegram_chat_id and technician.telegram_chat_id.strip():
+        raise HTTPException(status_code=409, detail="Il tecnico ha già un collegamento Telegram.")
+    try:
+        url, expires_at = binding_url(technician.id, get_settings())
+    except TelegramBindingConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return TelegramBindingLinkResponse(url=url, expires_at=expires_at, telegram_linked=False)
+
+
+@router.delete(
+    "/technicians/{technician_id}/telegram-link", response_model=TelegramBindingStatusResponse
+)
+def delete_telegram_link(technician_id: int, db: Database):
+    technician = db.get(Technician, technician_id)
+    if technician is None:
+        raise HTTPException(status_code=404, detail="Tecnico non trovato")
+    try:
+        technician.telegram_chat_id = None
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise
+    return TelegramBindingStatusResponse(telegram_linked=False)

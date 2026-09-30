@@ -57,6 +57,7 @@ Exit: requester-to-technician flow works locally on desktop and smartphone viewp
 ### Step 6 — Operator Control Center and real time
 
 - Delivered operator slice: ODL edit/delete, separate notes with atomic history/realtime, Dashboard/list quick reminders, and technician contact editing with routing fields read-only.
+- Delivered: private per-technician Telegram binding through signed bot deep links and an authenticated webhook; the demo fallback remains for unlinked technicians.
 - Build the reference-style sidebar, header/search, summary cards, recent/all ODL table, filters, detail/history, operator actions, and urgent people-risk call treatment.
 - Delivered: single-instance in-memory WebSocket updates after commit, Dashboard/detail refetch, and reconnect with backoff.
 
@@ -89,7 +90,7 @@ Exit: the same workflow runs in the reference cloud topology with documented tea
 - Event-driven processing with SQS/EventBridge.
 - Selective serverless components with API Gateway/Lambda where justified.
 - Enterprise authentication with Cognito, MFA, and more granular RBAC.
-- Associate each technician with a verified notification destination/user or an optional enterprise notification channel; replace the shared TELEGRAM_DEMO_CHAT_ID shortcut.
+- Optional enterprise notification channels beyond the Telegram private-chat binding.
 - Authenticated technician mobile access.
 - Reliable notification delivery, durable retry queues and delivery reconciliation.
 - Optional enterprise notification alternatives based on production requirements.

@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     notification_provider: str = "mock"
     telegram_bot_token: SecretStr = SecretStr("")
     telegram_demo_chat_id: str = ""
+    telegram_bot_username: str = ""
+    telegram_binding_secret: SecretStr = SecretStr("")
+    telegram_webhook_secret: SecretStr = SecretStr("")
+    telegram_binding_token_ttl_minutes: int = Field(default=15, ge=1, le=1440)
     ai_provider: str = "mock"
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = ""

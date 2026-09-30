@@ -30,3 +30,13 @@ services:
         value: groq
       - key: GROQ_TRANSCRIPTION_MODEL
         value: whisper-large-v3-turbo
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BINDING_SECRET
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: TELEGRAM_BINDING_TOKEN_TTL_MINUTES
+        value: "15"
