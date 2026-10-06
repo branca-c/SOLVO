@@ -111,7 +111,7 @@ it('detail adds separate notes, refreshes history, edits and returns to list on 
   await waitFor(() => expect(window.location.hash).toBe('#/odl'))
 })
 it('technician updates name and contact fields; routing stays read-only', async () => {
-  const technician = { id: 1, first_name: 'Mario', last_name: 'Rossi', phone: '123', email: null, category_id: 2, category_name: 'Idraulico', escalation_order: 1, is_team_leader: false }
+  const technician = { id: 1, first_name: 'Mario', last_name: 'Rossi', phone: '123', email: null, category_id: 2, category_name: 'Idraulico', escalation_order: 1, is_team_leader: false, telegram_linked: false }
   vi.spyOn(api, 'technicians').mockResolvedValue([technician])
   vi.spyOn(api, 'updateTechnician').mockImplementation(async (_id, data) => {
     const updated = { ...technician, ...data }; vi.mocked(api.technicians).mockResolvedValue([updated]); return updated
@@ -128,6 +128,21 @@ it('technician updates name and contact fields; routing stays read-only', async 
   expect(await screen.findByText('Marco Rossi')).toBeTruthy()
   expect(screen.getByText('456')).toBeTruthy()
   expect(api.updateTechnician).toHaveBeenCalledWith(1, { first_name: 'Marco', last_name: 'Rossi', phone: '456', email: 'marco@example.com' })
+})
+it('shows Telegram binding status and requests a link only for an unlinked technician', async () => {
+  const technicians = [
+    { id: 1, first_name: 'Ada', last_name: 'Rossi', phone: '123', email: null, category_id: 2, category_name: 'Idraulico', escalation_order: 1, is_team_leader: false, telegram_linked: true },
+    { id: 2, first_name: 'Luca', last_name: 'Bianchi', phone: '456', email: null, category_id: 2, category_name: 'Idraulico', escalation_order: 2, is_team_leader: false, telegram_linked: false },
+  ]
+  vi.spyOn(api, 'technicians').mockResolvedValue(technicians)
+  const telegramLink = vi.spyOn(api, 'telegramLink').mockRejectedValue(new ApiError('Collegamento non disponibile', 503))
+  render(<Technicians />)
+  expect(await screen.findByText('Collegato')).toBeTruthy()
+  const connect = screen.getByRole('button', { name: 'Collega Telegram' })
+  await userEvent.click(connect)
+  expect(telegramLink).toHaveBeenCalledWith(2)
+  expect(await screen.findByText('Collegamento non disponibile')).toBeTruthy()
+  expect(screen.queryByText(/chat ID/i)).toBeNull()
 })
 it('DELETE client accepts the existing 204 response', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })))

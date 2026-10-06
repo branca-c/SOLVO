@@ -128,8 +128,8 @@ it('shows category names in dashboard, list and detail with a shared lookup', as
 
 it('opens technicians from the sidebar and shows routing information', async () => {
   vi.spyOn(api, 'technicians').mockResolvedValue([
-    { id: 1, first_name: 'Demo 1', last_name: 'Idraulico', phone: '+12025550101', email: null, category_id: 2, category_name: 'Idraulico', escalation_order: 1, is_team_leader: false },
-    { id: 4, first_name: 'Demo 4', last_name: 'Idraulico', phone: '+12025550104', email: null, category_id: 2, category_name: 'Idraulico', escalation_order: 4, is_team_leader: true },
+    { id: 1, first_name: 'Demo 1', last_name: 'Idraulico', phone: '+12025550101', email: null, category_id: 2, category_name: 'Idraulico', escalation_order: 1, is_team_leader: false, telegram_linked: false },
+    { id: 4, first_name: 'Demo 4', last_name: 'Idraulico', phone: '+12025550104', email: null, category_id: 2, category_name: 'Idraulico', escalation_order: 4, is_team_leader: true, telegram_linked: false },
   ])
   render(<App />)
   await userEvent.click(screen.getByRole('link', { name: 'Tecnici' }))

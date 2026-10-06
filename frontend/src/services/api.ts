@@ -1,4 +1,4 @@
-import type { Category, Technician } from '../types/referenceData'
+import type { Category, Technician, TelegramBindingLink } from '../types/referenceData'
 import type { Assignment, HistoryEntry, Reminder, WorkOrder, WorkOrderInput, WorkOrderStatus, Priority, WorkOrderDraft, AudioWorkOrderDraft, PublicAssignment, NotificationResult } from '../types/workOrder'
 import { apiUrl } from './backendUrl'
 
@@ -52,6 +52,7 @@ export const api = {
   notes: (id: number, signal?: AbortSignal) => request<import('../types/workOrder').WorkOrderNote[]>(`/work-orders/${id}/notes`, { signal }),
   addNote: (id: number, text: string) => request<import('../types/workOrder').WorkOrderNote>(`/work-orders/${id}/notes`, { method: 'POST', body: JSON.stringify({ text }) }),
   updateTechnician: (id: number, data: Pick<Technician, 'first_name' | 'last_name' | 'phone' | 'email'>) => request<Technician>(`/technicians/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  telegramLink: (id: number) => request<TelegramBindingLink>(`/technicians/${id}/telegram-link`, { method: 'POST' }),
   startAssignment: (id: number) => request<Assignment>(`/work-orders/${id}/assignments/start`, { method: 'POST' }),
   noResponse: (id: number) => request<Assignment>(`/assignments/${id}/no-response`, { method: 'POST' }),
   escalateTeamLeader: (id: number) => request<Assignment>(`/work-orders/${id}/assignments/escalate-team-leader`, { method: 'POST' }),

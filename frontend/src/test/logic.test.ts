@@ -72,3 +72,11 @@ it('uses token-scoped public action paths and the explicit notify endpoint', asy
   expect(fetcher.mock.calls[1][1].method).toBe('POST')
   expect(JSON.parse(fetcher.mock.calls[2][1].body)).toEqual({ rejection_notes: 'Note facoltative' })
 })
+
+it('creates Telegram binding links through the technician endpoint', async () => {
+  const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ url: 'https://t.me/SolvoBot?start=signed', expires_at: '2026-10-06T12:15:00Z', telegram_linked: false })))
+  vi.stubGlobal('fetch', fetcher)
+  await api.telegramLink(7)
+  expect(fetcher.mock.calls[0][0]).toBe('/api/technicians/7/telegram-link')
+  expect(fetcher.mock.calls[0][1].method).toBe('POST')
+})
