@@ -6,6 +6,10 @@ SOLVO is an AI-assisted facility-maintenance work-order system. A requester desc
 
 The MVP succeeds when its primary flow can be demonstrated clearly from intake through technician fulfillment and operator closure. AI assists interpretation; it does not own operational decisions.
 
+The current public demo uses a Render Static Site frontend, a Render Web Service
+backend, Neon PostgreSQL, Groq providers, and Telegram Bot API. It is a public
+demo rather than a production deployment; AWS remains deferred.
+
 ## 2. Roles and surfaces
 
 | Role | Responsibilities | Primary surface |
@@ -14,7 +18,10 @@ The MVP succeeds when its primary flow can be demonstrated clearly from intake t
 | Operator (`OPERATORE`) | Monitor ODLs, assignments, urgent cases, reminders and closures; call the team lead when needed | Control Center |
 | Technician (`TECNICO`) | Open the mobile request, accept or refuse it, add intervention details, mark it fulfilled | Mobile web page reached from the notification |
 
-Authentication may be intentionally simple for the MVP, but authorization must still enforce role capabilities.
+The caposquadra is the team-leader technician used at the end of the configured
+routing order and for direct team-leader escalation. Authentication/authorization
+remain explicit MVP gaps: public technician access uses signed links, while the
+public operator/requester APIs are not a production authorization boundary.
 
 ## 3. Controlled vocabulary
 
@@ -61,7 +68,7 @@ Reminders are separate timestamped textual follow-ups/requests, with required tr
 ## 5. Main flow
 
 1. The requester submits a text message or records audio in the browser.
-2. Audio is held temporarily for transcription through a provider and is never stored permanently in this slice. Transcription can use a deterministic mock or real local speech recognition.
+2. Audio is held temporarily for transcription through a provider and is never stored permanently in this slice. The public demo uses Groq `whisper-large-v3-turbo`; deterministic mock and real local speech recognition remain supported.
 3. An AI provider returns structured proposed data: requester details, address, category, priority, description, and people-risk flag.
 4. The backend validates required fields, allowed values, and category existence.
 5. The requester sees an editable draft. No ODL exists until they explicitly confirm it.
@@ -128,6 +135,7 @@ For `URGENTE` plus people risk, the Control Center must strongly highlight the O
 - The model never writes to PostgreSQL and never performs a status transition.
 - Provider failure must preserve the original input and offer a clear retry/manual-completion path.
 - Low-confidence or missing classification becomes a draft validation issue, not invented data.
+- The public demo uses Groq `openai/gpt-oss-120b` for structured text extraction and Groq `whisper-large-v3-turbo` for audio transcription; local/mock providers remain supported.
 
 ## 9. Audit and acceptance criteria
 
@@ -163,8 +171,9 @@ Creation, actual status changes, and reminders append history; no-op updates do
 not. Missing ODLs return 404, invalid transitions 409, and invalid input 422.
 
 Category validation checks existence because the model has no active flag.
-Physical ODL deletion removes related history through existing cascades. This
-slice does not implement the complete product flow described above.
+Physical ODL deletion removes related history through existing cascades. The
+delivered API remains subject to the explicit authentication/authorization,
+versioned-contract, idempotency, and integration-test gaps tracked for the MVP.
 
 
 ## 11. Current assignment routing delivery
@@ -252,6 +261,8 @@ The frontend shows analysis loading/errors, preserves the source text on failure
 populates the existing form on success, and allows editing every creation field.
 Only the final confirmation sends the normal POST and navigates to the new ODL.
 Text and audio drafts require confirmation; automatic creation is not included.
+The public demo configures Groq `openai/gpt-oss-120b` as its text provider;
+the deterministic mock and local Ollama options remain available for local use.
 
 ### Delivered audio intake
 
@@ -280,25 +291,30 @@ return 422. There is no login system in this delivery.
 
 `POST /api/assignments/{id}/notify` is an explicit operator action for the current
 PENDING assignment on a nonterminal ODL. It builds the signed mobile link and sends
-SOLVO, ODL code, priority, address and category to the configured demo chat. Creation,
-rejection and escalation never send messages automatically. The response includes
-provider, message ID, submission status and action URL. A meaningful history event
-records successful submission or simulation. Provider errors return 503 without a
-false success history event. Mock is default and performs no external calls; the
-Telegram Bot API adapter sends HTTPS messages to the server-configured numeric
-Telegram destination. A technician with a non-empty private `telegram_chat_id`
-receives the notification there; otherwise the server-side `TELEGRAM_DEMO_CHAT_ID`
-remains the temporary demo fallback. The chat ID is never returned by normal APIs
-or recorded in history. Telegram is the selected MVP/demo transport.
-Technicians can receive a short-lived signed bot deep link. The authenticated
+SOLVO, ODL code, priority, address and category to the assigned technician's private
+Telegram binding when present; the server-side `TELEGRAM_DEMO_CHAT_ID` remains the
+demo fallback for an unlinked technician. Creation, rejection and escalation never
+send messages automatically. The response includes provider, message ID, submission
+status and action URL. A meaningful history event records successful submission or
+simulation. Provider errors return 503 without a false success history event. Mock
+is default and performs no external calls; the Telegram Bot API adapter sends HTTPS
+messages to the server-configured destination. The chat ID is never returned by
+normal APIs or recorded in history. Telegram is the selected MVP/demo transport.
+For an unlinked technician, the public Tecnici UI exposes **Collega Telegram** and
+creates a signed, expiring bot deep link (currently a 15-minute TTL). The protected
 Telegram webhook accepts private `/start` messages only, binds the chat ID to the
 token's technician, and sends a confirmation. Binding is idempotent for the same
-chat, rejects reassignment or chat reuse, and can be removed through the operator
-API. Chat IDs and binding secrets are never returned, logged, or written to history.
-Submission does not claim confirmed delivery; no delivery receipt webhook is implemented.
-The signed action link and mobile page remain the response mechanism.
-Cloudflare Quick Tunnel provides temporary phone-accessible demo URLs configured
-through TECHNICIAN_ACTION_BASE_URL; it is not production architecture.
+chat and rejects reassignment or chat reuse; one Telegram account/chat cannot bind
+to multiple technicians. `telegram_chat_id` and binding secrets remain server-side;
+the frontend receives only `telegram_linked`. The backend/operator API supports
+removing a binding through `DELETE /api/technicians/{technician_id}/telegram-link`,
+but the public Tecnici frontend deliberately exposes no unlink action. Technician
+phone numbers are not Telegram destinations. Submission does not claim confirmed
+delivery; no delivery receipt webhook is implemented. The signed action link and
+mobile page remain the response mechanism. This public signed-action flow has been
+manually validated end to end without exposing tester identities or tokens. Cloudflare
+Quick Tunnel is only temporary local phone-access testing configured through
+TECHNICIAN_ACTION_BASE_URL, not the current public-demo deployment.
 
 The mobile route `/tecnico/assegnazione/:token` has no operator sidebar, shows
 large accept/refuse actions and optional refusal notes, handles invalid links and
@@ -326,6 +342,8 @@ bursts; reconnect also refreshes data to cover events lost while disconnected.
 The UI shows a small connection indicator and retries with 3–15 second backoff.
 Manual refresh is still available. This is best-effort single-instance delivery,
 with no authentication, shared message bus, durable replay or background scheduler.
+Multi-instance WebSocket fan-out would require shared pub/sub such as Redis; the
+current in-memory implementation is not horizontally scalable.
 
 ## 16. Delivered reference-data/demo bootstrap
 
@@ -334,9 +352,10 @@ lists category routing configuration with an optional category ID filter.
 Tecnici displays names, category, escalation order, technician/team-leader role
 and phone. Manual, text and audio intake share a category select; dashboard,
 list and detail show names. Payloads retain the existing category ID contract.
-An explicit local seed creates the 13 initial categories, three normal technicians
-and one team leader per category, plus one demo requester usable for reminders.
-It is idempotent, never runs on startup and never seeds ODLs. No authentication,
+Migrations are applied through `20260930_0005`. An explicit local seed creates the
+13 initial categories and 52 technicians (three normal technicians and one team
+leader per category), plus one demo requester usable for reminders. It is
+idempotent, never runs on startup and never seeds ODLs. No authentication,
 reference-data editing or additional workflow controls are introduced.
 
 ## 17. Delivered operator detail controls
@@ -389,7 +408,11 @@ team-leader role remain read-only configuration; routing rules are unchanged.
 is stored separately and is deliberately not editable or exposed through this API;
 the response exposes only whether it is linked. Telegram delivery uses that binding
 when present, otherwise `TELEGRAM_DEMO_CHAT_ID`; neither destination is recorded
-in history. No webhook or bot `/start` binding flow is included.
+in history. The protected Telegram webhook handles private `/start` binding; the
+public Tecnici UI can create a signed, expiring binding link for an unlinked
+technician. The backend/operator API supports removal through
+`DELETE /api/technicians/{technician_id}/telegram-link`, but the public Tecnici UI
+does not expose an unlink action.
 
 
 ## Textual solleciti and notes presentation
@@ -462,6 +485,8 @@ transcription_source is mock/local_whisper (nullable for custom providers). The 
 labels the recognized transcript as Trascrizione locale or simulated/demo accordingly.
 All fields stay editable and explicit confirmation creates the ODL; analysis never
 creates one. Amazon Transcribe is not implemented; PDF regeneration is deferred.
+The public demo uses TRANSCRIPTION_PROVIDER=groq with Groq
+`whisper-large-v3-turbo`; this does not change the local/mock alternatives.
 
 
 ## Local semantic extraction delivery
@@ -472,6 +497,10 @@ Whisper handles speech-to-text; Ollama handles field extraction/technical summar
 Both typed text and recognized speech use the same draft pipeline and editable form.
 Only explicit Conferma e crea ODL invokes normal WorkOrder creation. Analysis never
 writes ODLs, assignments, history or categories.
+
+The public demo uses AI_PROVIDER=groq with `openai/gpt-oss-120b` for structured
+extraction. Groq provider failures remain explicit and do not fall back silently
+to mock or Ollama.
 
 Ollama proposes the existing nullable requester names, phone/email, fault_address,
 category_name, priority and description. No missing data may be invented. Required

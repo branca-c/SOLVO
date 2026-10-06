@@ -2,7 +2,7 @@
 
 ## 1. Architecture goal
 
-Use a modular monolith with explicit boundaries. This keeps the MVP fast to build and easy to demonstrate while preserving seams for the integrations described in the technical guide. The first runnable system is local-first; no AWS resources are implemented at this foundation stage.
+Use a modular monolith with explicit boundaries. This keeps the MVP fast to build and easy to demonstrate while preserving seams for the integrations described in the technical guide. Local-first development remains supported; the current public MVP demo is deployed separately, while no AWS resources are implemented at this foundation stage.
 
 ```text
 Requester portal ─┐
@@ -89,11 +89,11 @@ Define narrow application ports for:
 - `ObjectStore`: put/get/delete application-owned audio objects;
 - `NotificationProvider`: technician assignment notification containing a mobile link.
 
-The first implementation of every port is local and deterministic. This enables the full demo and automated tests without external accounts, network calls, or cloud costs. Provider selection occurs through configuration, never scattered conditionals. The text-draft AI port also has a Groq adapter using its OpenAI-compatible chat-completions API with server-side credentials. It returns structured fields and a synthesized technical description in one generation; Ollama retains its local structured-extraction plus source-grounded quote-selection flow. Neither adapter has database, workflow or transcription access.
+The first implementation of every port is local and deterministic. This enables the full demo and automated tests without external accounts, network calls, or cloud costs. Provider selection occurs through configuration, never scattered conditionals. The current public demo uses the Groq text adapter with `openai/gpt-oss-120b` and the Groq transcription adapter with `whisper-large-v3-turbo`; local/mock, Ollama, and local faster-whisper paths remain distinct. The text adapter returns structured fields and a synthesized technical description in one generation; Ollama retains its local structured-extraction plus source-grounded quote-selection flow. Neither adapter has database, workflow or transcription access.
 
 ## 7. Security and data handling
 
-- Use server-side authorization for every command and query.
+- Keep server-side authorization as the architectural boundary for every command and query; requester/operator authorization remains an explicit MVP gap, while public technician access is signed-link/token based.
 - Store technician action tokens only as hashes, with an expiry and one assignment scope.
 - Treat phone, email, address, transcript, and audio as personal data; never log their full values by default.
 - Keep secrets in environment variables locally and out of source control.
@@ -105,7 +105,7 @@ Production-grade identity, retention automation, and cloud security configuratio
 
 ## 8. Local runtime and quality gates
 
-The later local environment should use containers for PostgreSQL and, when helpful, an S3-compatible local object store; frontend/backend may run directly for rapid development. Seed data must create the initial categories, one routing team per useful demo category, three technicians, one team lead, and demo users.
+The local environment may use containers for PostgreSQL and, when helpful, an S3-compatible local object store; frontend/backend may run directly for rapid development. The explicit demo seed creates 13 categories and 52 technicians (three technicians and one team lead per category), plus demo users. Local/mock providers remain supported and are distinct from the public deployment.
 
 Testing layers:
 
@@ -119,12 +119,20 @@ Formatting, linting, static typing, migrations, tests, and production builds bec
 
 ## 9. Deferred deployment mapping
 
-AWS deployment remains deferred in `docs/ROADMAP.md`; no AWS resources are implemented.
-The delivered MVP uses one FastAPI backend with in-memory WebSocket realtime,
-PostgreSQL, and Telegram Bot API or a deterministic mock for notifications.
-Cloudflare Quick Tunnel is temporary development/demo access to Vite only, not a
-production architecture component. The PDF's notification mapping is superseded by
-this explicit decision and requires manual regeneration.
+Three architectures remain deliberately distinct. Local/mock development uses the
+same modular monolith with local deterministic providers (and optional local Ollama
+or faster-whisper) for repeatable tests and development. The current public MVP demo
+uses a React/Vite Render Static Site frontend, a FastAPI Render Web Service backend,
+Neon PostgreSQL, Groq text/transcription providers, and Telegram Bot API. It is a
+public demo, not a production-grade deployment.
+
+AWS deployment remains deferred in `docs/ROADMAP.md`; no AWS resources are currently
+implemented or deployed. The delivered public backend is one FastAPI instance with
+in-memory WebSocket realtime, Neon PostgreSQL, and Telegram notifications/binding;
+the deterministic mock remains available locally. Cloudflare Quick Tunnel is only
+temporary local phone-access tooling to Vite, not a public-demo architecture component.
+The PDF's notification mapping is superseded by this explicit decision and requires
+manual regeneration.
 
 
 ## 10. Delivered WorkOrder API slice (2026-09-08)
@@ -351,12 +359,16 @@ job or inline callback is introduced.
 
 Telegram chat binding is a separate service from assignment action links. It creates
 a compact HMAC-signed, expiring deep-link payload containing only a technician ID
-and expiry, then validates it with constant-time comparison in the authenticated
-Telegram webhook. The webhook accepts only private `/start` updates and takes the
-chat ID exclusively from Telegram's update. A database unique constraint prevents a
-chat from being linked to multiple technicians; same-chat replay is idempotent and
-different-chat overwrite is refused. Link creation and unlinking return only safe
-status data. Missing binding configuration fails those endpoints closed with 503.
+and expiry, then validates it with constant-time comparison in the secret-authenticated
+Telegram webhook. The public Tecnici UI creates an unlinked technician's binding link
+through `POST /api/technicians/{id}/telegram-link`; the webhook accepts only private
+`/start` updates and takes the chat ID exclusively from Telegram's update. A database
+unique constraint prevents a chat from being linked to multiple technicians;
+same-chat/token replay is idempotent and cross-technician reassignment or chat reuse
+is refused. `DELETE /api/technicians/{id}/telegram-link` removes a binding
+server-side, but the public frontend deliberately exposes no unlink action. Link
+creation and removal return only safe status data. Missing binding configuration
+fails those endpoints closed with 503.
 
 For phone demos the Quick Tunnel URL becomes TECHNICIAN_ACTION_BASE_URL and its
 exact hostname is explicitly allowed by Vite using its additional-host environment
@@ -405,14 +417,16 @@ mounted controls and previous data while replacing fetched results.
 
 Run only one backend worker/instance. Connection memory is process-local and has no
 shared pub/sub, persistence or replay. The endpoint shares the trusted-network scope
-of existing unauthenticated operator APIs. Further scaling requirements are recorded
-only in ROADMAP.
+of existing unauthenticated operator APIs. Multi-instance fan-out would require
+shared pub/sub such as Redis/ElastiCache; it is not delivered. Further scaling
+requirements are recorded only in ROADMAP.
 
 ## 16. Reference data and explicit demo bootstrap
 
 Two read-only routes reuse existing SQLAlchemy models and the session dependency.
 Technicians join Category for category_name, avoiding per-row lazy queries, and
-sort in routing order within each category. No model or migration changes.
+sort in routing order within each category. Migrations are applied through
+`20260930_0005`.
 The seed is an explicit Python module, not an app startup hook. Exact category
 names and deterministic demo emails identify rows; an existing conflicting
 routing slot aborts the transaction without overwriting configuration. The user
@@ -476,9 +490,11 @@ and nullable email. Blank required names/phone, null required fields, and extra
 fields return 422; missing technician returns 404. Tecnici provides contact
 editing and feedback with immediate refresh. Category, escalation order and
 team-leader role remain read-only configuration; routing rules are unchanged.
-**Technician phone is editable real contact data, but the CURRENT Telegram demo
-transport uses TELEGRAM_DEMO_CHAT_ID, not the technician phone number.**
-No authentication, provider changes or new notification channels are included.
+**Technician phone is editable real contact data and is not a Telegram destination.**
+Telegram notifications prefer the technician's private server-side binding, with an
+optional configured demo-chat fallback for an unlinked technician. The public Tecnici
+UI exposes no unlink action, although the backend/operator DELETE endpoint can remove
+a binding. No authentication or new notification channels are included.
 
 
 ## Textual solleciti and notes presentation
@@ -670,15 +686,16 @@ No frontend, schema, migration, Whisper, Telegram or AWS changes are required.
 The technical PDF is not regenerated.
 
 
-## Public-demo backend deployment target
+## Current public-demo deployment
 
-The first public-demo backend target is one **Render Free Web Service** backed by a
-managed **Neon PostgreSQL** database. `render.yaml` defines only that backend service:
+The current public demo uses a React/Vite **Render Static Site** frontend and one
+**Render Web Service** FastAPI backend backed by managed **Neon PostgreSQL**. It is
+an MVP demo, not a production deployment. `render.yaml` defines the backend service:
 its repository root is `backend/`, it installs `requirements.txt` and runs
 `alembic upgrade head` in the Render build command, then starts
 `uvicorn app.main:app --host 0.0.0.0 --port $PORT`. Migrations are deliberately not
-run on application startup, avoiding concurrent process-start races. Render Free does
-not support a pre-deploy command, so the idempotent Alembic upgrade is an explicit
+run on application startup, avoiding concurrent process-start races. This Render
+service has no pre-deploy command, so the idempotent Alembic upgrade is an explicit
 part of its one backend build step. The Blueprint pins the already-used Python 3.12.3
 with `PYTHON_VERSION`. Render checks
 the lightweight unauthenticated `GET /health` endpoint; it returns `{"status":"ok"}`
@@ -688,8 +705,8 @@ without database queries, Groq, Telegram, Ollama, or Whisper initialization.
 `postgresql://...?...sslmode=require` URL. Settings normalize that scheme to the
 installed SQLAlchemy `postgresql+psycopg` dialect without discarding query options.
 No database credential, host, or TLS option is committed. Render must also receive
-`CORS_ALLOWED_ORIGINS` as a comma-separated explicit list (for example the future
-Render static-site URL); local defaults retain `http://localhost:5173` and
+`CORS_ALLOWED_ORIGINS` as a comma-separated explicit list including the deployed
+Render Static Site URL; local defaults retain `http://localhost:5173` and
 `http://127.0.0.1:5173`. Wildcard origins are rejected because credentials are enabled.
 
 The blueprint selects existing Groq text and transcription providers and configures
@@ -697,8 +714,9 @@ their public model names, while `GROQ_API_KEY` remains a Render secret. Required
 deployment variables are `DATABASE_URL`, `CORS_ALLOWED_ORIGINS`, `GROQ_API_KEY`,
 `AI_PROVIDER=groq`, `TRANSCRIPTION_PROVIDER=groq`, `GROQ_MODEL`,
 `GROQ_TRANSCRIPTION_MODEL`, and (optionally) `GROQ_TIMEOUT_SECONDS`. Technician
-links will later require a deployed frontend `TECHNICIAN_ACTION_BASE_URL` and the
-existing `ASSIGNMENT_ACTION_SECRET`; this task does not change Telegram behavior.
+action links use the deployed frontend `TECHNICIAN_ACTION_BASE_URL` and the existing
+`ASSIGNMENT_ACTION_SECRET`. Telegram binding and notification configuration remain
+server-side; no chat IDs, secrets, or signed tokens are committed.
 
 Cloudflare Quick Tunnel and `cloudflared` remain local development/demo tooling
 only. The deployed backend has no tunnel dependency or committed tunnel hostname.
@@ -706,4 +724,5 @@ The current application writes no uploaded audio to durable storage: multipart
 uploads are processed in memory/temporary framework spooling and closed after the
 request. PostgreSQL is the only required persistent application state. The existing
 single-process in-memory WebSocket manager is suitable only for this one Render
-instance; a future multi-instance deployment needs shared fan-out.
+instance; a future multi-instance deployment needs shared fan-out such as
+Redis/ElastiCache.

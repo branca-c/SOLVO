@@ -2,7 +2,7 @@
 
 SOLVO is an AI-assisted work-order and facility service desk. A requester describes a fault by text or audio, reviews an editable structured ODL (Ordine di Lavoro) draft, and confirms it. Deterministic backend rules route the confirmed ODL to technicians, while operators monitor progress in a real-time Control Center.
 
-The backend contains a FastAPI health endpoint, SQLAlchemy models/migrations, and the WorkOrder CRUD, reminders, history, status-policy, and assignment-routing API slice of Step 3. The complete Step 3 workflow is not delivered.
+The delivered public demo includes the requester, technician, and operator flows, backed by FastAPI, SQLAlchemy/Alembic, and PostgreSQL. It is an MVP public demo, not a production-ready deployment: authentication/authorization, API-contract, hardening, and automated end-to-end coverage still have explicit gaps.
 
 ## Source of truth
 
@@ -23,9 +23,19 @@ When documents conflict, the PDF governs functional/technical intent and the PNG
 - Statuses: `APERTO`, `IN_CORSO`, `EVASO`, `CHIUSO`, `ANNULLATO`.
 - Technician routing: configured category technicians by escalation order, with team leaders last.
 - Technician refusal: optional notes only.
-- Intended stack: React + TypeScript, FastAPI + Pydantic, PostgreSQL, REST + WebSocket.
-- Local deterministic providers come first; Telegram Bot API is available for demo notifications; AWS integrations are deferred.
+- Frontend: React + TypeScript + Vite; backend: FastAPI + Pydantic + SQLAlchemy + Alembic.
+- Database: PostgreSQL (Neon for the public demo); realtime WebSocket updates are in-memory and single-instance.
+- Public-demo AI uses Groq: `openai/gpt-oss-120b` for text extraction and `whisper-large-v3-turbo` for audio transcription.
+- Telegram Bot API delivers technician notifications and supports private technician self-service binding; AWS integrations are deferred.
 - No SLA or "tempo aperto" is part of the MVP.
+
+## Public demo and current deployment
+
+The public frontend is available at https://solvo-frontend.onrender.com. Its FastAPI backend runs as a Render Web Service and its demo PostgreSQL database is Neon. This deployment no longer depends on a developer PC or Cloudflare Quick Tunnel; Quick Tunnel remains documented below only for local phone-access testing.
+
+The current public workflow is: create an ODL, assign a technician, handle rejection and deterministic escalation when needed, send a Telegram notification, open a signed technician action link, accept the intervention, and move the ODL from `APERTO` to `IN_CORSO`. This flow has been manually verified publicly, including two rejections/escalations before a Telegram action-link acceptance.
+
+Delivery status: Steps 0, 2, 4, 5, and 6 are delivered. Steps 1 and 3 are materially delivered with explicit remaining gaps. Step 7 (hardening and demo) is current. AWS deployment remains deferred and is not the current deployment.
 
 ## Backend development
 
@@ -260,8 +270,9 @@ npm run preview
 La preview è disponibile su `http://127.0.0.1:4173` e usa lo stesso proxy locale.
 La build statica è in `frontend/dist` (ignorata da Git). Il proxy appartiene ai
 server Vite di sviluppo/preview: per servire i file statici occorre inoltrare
-`/api` a FastAPI sulla stessa origine. Non è stata introdotta una configurazione
-di deployment. I test Vitest verificano componenti, form, transizioni, conteggi,
+`/api` a FastAPI sulla stessa origine. Questa è la configurazione di sviluppo/preview
+locale; per il deployment pubblico corrente, vedi **Public demo and current deployment**.
+I test Vitest verificano componenti, form, transizioni, conteggi,
 filtri e contratti del client usando risposte controllate; nessun dato fittizio
 è incluso nel runtime dell’applicazione. Poppins è distribuito localmente nel
 bundle; non vengono caricati font da servizi esterni.
@@ -366,21 +377,28 @@ For actual Telegram submission, configure the root/backend `.env`:
 ```dotenv
 NOTIFICATION_PROVIDER=telegram
 TELEGRAM_BOT_TOKEN=
+# Optional fallback for an unlinked technician; keep server-side.
 TELEGRAM_DEMO_CHAT_ID=
+TELEGRAM_BOT_USERNAME=
+TELEGRAM_BINDING_SECRET=
+TELEGRAM_WEBHOOK_SECRET=
+TELEGRAM_BINDING_TOKEN_TTL_MINUTES=15
 ```
 
-Create a bot through Telegram's **@BotFather**, save its token only in the backend
-configuration, then open your bot on your phone and press **Start** or send a message.
-Obtain your numeric chat ID from `result[].message.chat.id` using a one-off,
-server-side Bot API `getUpdates` request with your token. Do not put the token in
-frontend configuration, browser URLs, screenshots, or shared logs. SOLVO implements
-no polling loop or Telegram webhook. See the official [Bot API](https://core.telegram.org/bots/api#getupdates).
-Restart FastAPI after changing settings.
+Create a bot through Telegram's **@BotFather** and keep all token, webhook, and
+binding secrets only in backend configuration. Do not put them in frontend
+configuration, browser URLs, screenshots, or shared logs. Restart FastAPI after
+changing settings.
 
-**Demo shortcut:** all technician notifications go to `TELEGRAM_DEMO_CHAT_ID`,
-regardless of which technician routing selected. Technician phone numbers are not
-Telegram destinations. No Technician field or database migration is added.
-Production notification identity/channel work is tracked only in `docs/ROADMAP.md`.
+Private per-technician Telegram binding is implemented. In the public **Tecnici**
+page, **Collega Telegram** creates a signed, expiring bot deep link; its binding TTL
+is currently 15 minutes. The protected Telegram webhook processes a private `/start`
+and stores the chat destination server-side. The frontend receives only the
+`telegram_linked` boolean, never `telegram_chat_id`. One Telegram account/chat can
+be linked to only one technician, and there is no public unlink UI. Notifications
+prefer the linked technician's private chat; `TELEGRAM_DEMO_CHAT_ID` remains an
+optional server-side fallback for an unlinked technician. Technician phone numbers
+are not Telegram destinations.
 
 HTTPX sends HTTPS JSON to Telegram's server-side `sendMessage` endpoint with a
 10-second timeout. The message contains SOLVO, ODL code, priority, category,
@@ -391,11 +409,11 @@ Submission confirms API acceptance, not phone delivery or reading. Missing/inval
 configuration and provider failures return a clear 503. The default mock remains
 deterministic and network-free; tests never send real messages.
 
-#### Phone demo with Cloudflare Quick Tunnel
+#### Local phone testing with Cloudflare Quick Tunnel
 
 For same-PC testing keep `TECHNICIAN_ACTION_BASE_URL=http://127.0.0.1:5173`.
-For real phone testing the base URL must be reachable from that phone. The recommended
-zero-cost demo option is [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
+For local phone testing the base URL must be reachable from that phone. A temporary
+development option is [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
 With `cloudflared` already available (installation is not automated here), run:
 
 ```sh
@@ -537,9 +555,10 @@ and nullable email. Blank required names/phone, null required fields, and extra
 fields return 422; missing technician returns 404. Tecnici provides contact
 editing and feedback with immediate refresh. Category, escalation order and
 team-leader role remain read-only configuration; routing rules are unchanged.
-**Technician phone is editable real contact data, but the CURRENT Telegram demo
-transport uses TELEGRAM_DEMO_CHAT_ID, not the technician phone number.**
-No authentication, provider changes or new notification channels are included.
+**Technician phone is editable real contact data and is not a Telegram destination.**
+Telegram notifications prefer the technician's private server-side binding, with an
+optional demo-chat fallback when the technician is unlinked. No authentication or
+new notification channels are included.
 
 For production archive/soft-delete and audit-retention considerations, see the future deletion evolution in `docs/ROADMAP.md`. Run `alembic upgrade head` before using notes. The PDF guide is unchanged pending application validation.
 

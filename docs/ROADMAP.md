@@ -4,7 +4,7 @@ This is the only project document that may contain future capabilities. Complete
 
 ## MVP delivery steps
 
-### Step 0 — Foundation (current)
+### Step 0 — Foundation (COMPLETED)
 
 - Freeze product scope and vocabulary.
 - Record architecture and visual system.
@@ -15,6 +15,8 @@ Exit: the requested foundation files exist and agree on roles, flows, values, sc
 
 ### Step 1 — Repository and local toolchain
 
+Status: MATERIALLY DELIVERED — GAP. The remaining audit covers the full formatter/linter/type-check contract and the original local container-orchestration exit criterion.
+
 - Create frontend/backend/database/infrastructure structure.
 - Configure React + TypeScript, FastAPI + Pydantic, PostgreSQL, formatting, linting, typing, and tests.
 - Add local container orchestration and health checks.
@@ -22,6 +24,8 @@ Exit: the requested foundation files exist and agree on roles, flows, values, sc
 Exit: empty application shells and quality checks run locally.
 
 ### Step 2 — Domain and database
+
+Status: COMPLETED. Neon migrations are applied through `20260930_0005`; the demo seed provides 13 categories and 52 technicians (four per category).
 
 - Implement ODL model, exact controlled values, database-managed categories, users/roles, teams, ordered technicians/team lead, assignment attempts, reminders, and event history.
 - Add migrations and deterministic demo seed data.
@@ -31,6 +35,8 @@ Exit: domain tests and database migrations pass; no provider dependency is requi
 
 ### Step 3 — Core REST API
 
+Status: MATERIALLY DELIVERED — GAP. MVP authentication/authorization and versioned API contracts remain explicit gaps; idempotency and integration-test exit evidence still require audit.
+
 - Implement simple MVP authentication/authorization and versioned contracts.
 - Implement categories, ODL CRUD/query, draft confirmation, reminders, history, routing commands, accept/refuse, fulfillment, closure, and cancellation.
 - Add idempotency and transaction-level integration tests.
@@ -39,14 +45,18 @@ Exit: the complete deterministic workflow is operable through API tests.
 
 ### Step 4 — Deterministic local providers
 
+Status: COMPLETED FOR PUBLIC DEMO. Retain the mock/local providers: deployed real adapters use Groq for text extraction (`openai/gpt-oss-120b`) and audio transcription (`whisper-large-v3-turbo`), plus Telegram Bot API for notifications.
+
 - Implement fake AI interpretation, transcription, object storage, and technician notification behind provider ports.
-- Delivered: generic NotificationProvider, network-free mock and explicitly triggered Telegram Bot API adapter with signed technician links exposed inline. All demo notifications use server-side TELEGRAM_DEMO_CHAT_ID without a schema change.
-- Delivered demo instructions: Cloudflare Quick Tunnel supplies a temporary phone-accessible frontend URL; this is not production deployment.
+- Delivered: generic NotificationProvider, network-free mock and Telegram Bot API adapter with signed technician links. Production/public-demo notification configuration remains server-side; no chat IDs are exposed to the frontend.
+- Status note: Cloudflare Quick Tunnel was temporary development/demo access and is no longer the public-demo architecture.
 - Test failure/retry and provider contracts.
 
 Exit: the end-to-end backend demo works offline with repeatable outputs.
 
 ### Step 5 — Requester and technician interfaces
+
+Status: COMPLETED.
 
 - Build text/audio intake, processing, editable draft, confirmation, state/reminder view.
 - Build the tokenized, touch-friendly technician page for accept/refuse and fulfillment.
@@ -56,21 +66,29 @@ Exit: requester-to-technician flow works locally on desktop and smartphone viewp
 
 ### Step 6 — Operator Control Center and real time
 
+Status: COMPLETED FOR SINGLE-INSTANCE MVP. The public frontend is hosted at `https://solvo-frontend.onrender.com`; its backend is a Render Web Service with Neon PostgreSQL. This is a public demo, not a production deployment.
+
 - Delivered operator slice: ODL edit/delete, separate notes with atomic history/realtime, Dashboard/list quick reminders, and technician contact editing with routing fields read-only.
-- Delivered: private per-technician Telegram binding through signed bot deep links and an authenticated webhook; the demo fallback remains for unlinked technicians.
+- Delivered: private per-technician Telegram binding through signed, expiring (currently 15-minute) bot deep links and an authenticated webhook. The Tecnici page exposes “Collega Telegram”; one Telegram account/chat cannot bind to multiple technicians, `telegram_chat_id` remains server-side, and the frontend receives only `telegram_linked`. The demo fallback remains for unlinked technicians; there is no public unlink UI.
 - Build the reference-style sidebar, header/search, summary cards, recent/all ODL table, filters, detail/history, operator actions, and urgent people-risk call treatment.
 - Delivered: single-instance in-memory WebSocket updates after commit, Dashboard/detail refetch, and reconnect with backoff.
 
 Exit: technician actions update the Control Center without refresh; no SLA or "tempo aperto" appears.
 
+Verified public E2E: ODL creation → assignment → technician 1 rejection → escalation → technician 2 rejection → escalation → technician 3 → external Telegram notification → signed technician link → accept → `APERTO` → `IN_CORSO`. WebSocket realtime remains in-memory and single-instance; horizontal fan-out would require Redis/shared pub-sub.
+
 ### Step 7 — MVP hardening and demo
+
+Status: CURRENT. Immediate queue: readiness audit against these exit criteria; final automated E2E coverage; Step 3 authentication/authorization/security decision; security and token/log-redaction review; reset/reseed procedure including Telegram bindings; public-demo empty/error/loading/responsive polish; repeatable 2–3 minute demo script; final lint/type/test/build gates; and documentation polish.
 
 - Add core end-to-end tests, authorization/security checks, upload limits, logging redaction, empty/error/loading states, responsive polish, and demo reset/seed tooling.
 - Document a repeatable 2–3 minute demo and run all quality gates.
 
-Exit: a clean checkout can run and demonstrate the entire local MVP reliably.
+Exit: a clean checkout can run and demonstrate the entire local MVP reliably; the public demo is demonstrable without being represented as production.
 
 ### Step 8 — External integrations and AWS deployment (deferred)
+
+Status: DEFERRED. AWS deployment is not the current public demo.
 
 - The audio transcription port now has a local mock; a future Amazon Transcribe adapter must preserve temporary-data handling, validated transcripts and explicit draft confirmation.
 - Replace local providers with S3 audio, Amazon Transcribe (`it-IT`), Amazon Bedrock structured extraction, adapters. Telegram Bot API is already delivered for the MVP/demo behind the generic notification port.
