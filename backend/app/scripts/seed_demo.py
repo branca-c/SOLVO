@@ -12,8 +12,8 @@ DEMO_CATEGORIES = (
 DEMO_USER_EMAIL = "richiedente@solvo-demo.example"
 
 
-def seed_demo(db: Session) -> int:
-    """Insert missing demo rows atomically; refuse conflicting routing configuration."""
+def seed_demo(db: Session, *, commit: bool = True) -> int:
+    """Insert missing demo rows; optionally leave the transaction to the caller."""
     try:
         for index, name in enumerate(DEMO_CATEGORIES):
             category = db.scalar(select(Category).where(Category.name == name))
@@ -46,7 +46,8 @@ def seed_demo(db: Session) -> int:
             db.add(user)
             db.flush()
         user_id = user.id
-        db.commit()
+        if commit:
+            db.commit()
         return user_id
     except Exception:
         db.rollback()

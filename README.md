@@ -78,8 +78,26 @@ packages with `npm ci`, and configure local `.env` from `.env.example` (includin
    ```
 
 4. From `backend/`, start `uvicorn app.main:app --reload`.
+
 5. In another terminal, from `frontend/`, start `npm run dev` and open
    `http://127.0.0.1:5173`.
+
+## Public-demo reset
+
+The backend-only maintenance command below removes demo runtime ODL data and
+idempotently restores missing demo reference data. It is not an HTTP or frontend
+feature, and requires the explicit destructive confirmation flag:
+
+```sh
+python -m app.scripts.reset_demo --confirm
+```
+
+By default, the command preserves technician Telegram bindings. To clear only
+those bindings while retaining technician identity and routing configuration:
+
+```sh
+python -m app.scripts.reset_demo --confirm --clear-telegram-bindings
+```
 
 The seed inserts **local/demo data only**. It never runs at application startup
 and is not automatically inserted in production. **WorkOrders are intentionally
