@@ -4,6 +4,14 @@ SOLVO is an AI-assisted work-order and facility service desk. A requester descri
 
 The delivered public demo includes the requester, technician, and operator flows, backed by FastAPI, SQLAlchemy/Alembic, and PostgreSQL. It is an MVP public demo, not a production-ready deployment: authentication/authorization, API-contract, hardening, and automated end-to-end coverage still have explicit gaps.
 
+The normal requester/operator demo surface is protected by a single shared
+`SOLVO_DEMO_ACCESS_KEY`, entered manually by a tester and held only in that browser
+session. This is a small demo gate, not production authentication or authorization.
+The canonical demo key is configured only server-side and is never hardcoded in the
+frontend bundle; the tester-entered copy is held only in sessionStorage.
+Signed technician action links and the Telegram webhook keep their separate security
+mechanisms and do not require the demo key.
+
 ## Source of truth
 
 - Functional and technical reference: `docs/design/SOLVO_Guida_Tecnica_MVP_v0.1 (2).pdf`

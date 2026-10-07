@@ -5,6 +5,7 @@ import { connectRealtime, websocketUrl } from '../services/realtime'
 import { Dashboard } from '../pages/Dashboard'
 import { WorkOrderDetail } from '../pages/WorkOrderDetail'
 import { api } from '../services/api'
+import { clearDemoAccessKey, setDemoAccessKey } from '../services/demoAccess'
 import { order } from './fixtures'
 
 class Socket {
@@ -14,11 +15,12 @@ class Socket {
   onerror: (() => void) | null = null
   onmessage: ((event: { data: string }) => void) | null = null
   close = vi.fn()
+  send = vi.fn()
   constructor(public url: string) { Socket.instances.push(this) }
   emit(id: number) { this.onmessage?.({ data: JSON.stringify({ type: 'assignment.accepted', work_order_id: id, timestamp: '2026-09-08T00:00:00Z' }) }) }
 }
 beforeEach(() => { Socket.instances = []; vi.stubGlobal('WebSocket', Socket) })
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); clearDemoAccessKey(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 it('derives WS/WSS URLs and reconnects with delay, then cleans up', () => {
   vi.useFakeTimers()
@@ -47,6 +49,19 @@ it('derives WS/WSS URLs and reconnects with delay, then cleans up', () => {
   vi.advanceTimersByTime(30000)
   expect(Socket.instances).toHaveLength(2)
   expect(Socket.instances[1].close).toHaveBeenCalled()
+})
+
+it('sends the demo key only as the first WebSocket frame, never in the URL', () => {
+  setDemoAccessKey('session-only-key')
+  const event = vi.fn(), status = vi.fn(), opened = vi.fn()
+  connectRealtime(event, status, opened)
+  const socket = Socket.instances[0]
+  socket.onopen?.()
+  expect(socket.url).not.toContain('session-only-key')
+  expect(socket.send).toHaveBeenCalledWith('session-only-key')
+  expect(opened).not.toHaveBeenCalled()
+  socket.onmessage?.({ data: 'authorized' })
+  expect(opened).toHaveBeenCalledOnce()
 })
 
 it('dashboard refetches on events and connection establishment', async () => {

@@ -718,6 +718,16 @@ action links use the deployed frontend `TECHNICIAN_ACTION_BASE_URL` and the exis
 `ASSIGNMENT_ACTION_SECRET`. Telegram binding and notification configuration remain
 server-side; no chat IDs, secrets, or signed tokens are committed.
 
+The public demo additionally uses `SOLVO_DEMO_ACCESS_ENABLED=true` with a private
+server-side `SOLVO_DEMO_ACCESS_KEY`. This is a shared browser-session gate for the
+normal requester/operator/reference-data APIs, not an identity, account, or role
+system. The React client sends the entered value only as `X-SOLVO-DEMO-KEY`; a
+missing or invalid value receives a generic 401 response. The normal realtime
+socket sends it only as its first WebSocket frame after opening, then waits for a
+server acknowledgement, so it never appears in a URL or query string. Signed
+technician assignment URLs and the Telegram webhook remain independently secured
+and bypass this shared gate.
+
 Cloudflare Quick Tunnel and `cloudflared` remain local development/demo tooling
 only. The deployed backend has no tunnel dependency or committed tunnel hostname.
 The current application writes no uploaded audio to durable storage: multipart

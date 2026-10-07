@@ -1,5 +1,7 @@
 import { Technicians } from './pages/Technicians'
 import { useEffect, useRef, useState } from 'react'
+import { DemoAccessGate } from './components/DemoAccessGate'
+import { demoAccessRejectedEvent, getDemoAccessKey } from './services/demoAccess'
 import { TechnicianAssignment } from './pages/TechnicianAssignment'
 import { Layout } from './components/Layout'
 import { Dashboard } from './pages/Dashboard'
@@ -10,6 +12,8 @@ import { useRoute } from './services/navigation'
 export default function App() {
   const route = useRoute()
   const [createdId, setCreatedId] = useState<number>()
+  const [hasDemoAccess, setHasDemoAccess] = useState(() => Boolean(getDemoAccessKey()))
+  const [accessMessage, setAccessMessage] = useState('')
   const previousRoute = useRef(route)
   const detail = /^\/odl\/([1-9]\d*)$/.exec(route)
   const id = detail ? Number(detail[1]) : undefined
@@ -23,7 +27,13 @@ export default function App() {
     }
     previousRoute.current = route
   }, [route, title])
+  useEffect(() => {
+    const rejected = () => { setHasDemoAccess(false); setAccessMessage('La chiave demo non è valida o non è più disponibile.') }
+    window.addEventListener(demoAccessRejectedEvent, rejected)
+    return () => window.removeEventListener(demoAccessRejectedEvent, rejected)
+  }, [])
   if (technician) return <TechnicianAssignment key={technician[1]} token={technician[1]} />
+  if (!hasDemoAccess) return <DemoAccessGate message={accessMessage} onAccepted={() => { setAccessMessage(''); setHasDemoAccess(true) }} />
   return <Layout title={title} section={route === '/tecnici' ? 'tecnici' : route === '/' ? 'dashboard' : 'odl'}>
     {route === '/tecnici' ? <Technicians /> : route === '/' ? <Dashboard /> : route === '/odl' ? <WorkOrders /> : route === '/odl/nuovo' ? <CreateWorkOrder onCreated={setCreatedId} /> : id && Number.isSafeInteger(id) ? <WorkOrderDetail key={id} id={id} created={createdId === id} /> : <section className="surface empty"><h1>Pagina non trovata</h1><p>Il percorso richiesto non è disponibile.</p><a className="button button-primary" href="#/">Vai alla Dashboard</a></section>}
   </Layout>

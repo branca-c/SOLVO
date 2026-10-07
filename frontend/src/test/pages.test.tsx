@@ -10,9 +10,11 @@ import { CreateWorkOrder } from '../pages/CreateWorkOrder'
 import { Layout } from '../components/Layout'
 import { api } from '../services/api'
 import { clearCategoriesCache } from '../hooks/useCategories'
+import { clearDemoAccessKey, setDemoAccessKey } from '../services/demoAccess'
 import { order } from './fixtures'
 beforeEach(() => {
   clearCategoriesCache()
+  setDemoAccessKey('test-demo-key')
   vi.spyOn(api, 'categories').mockResolvedValue([{ id: 2, name: 'Idraulico', description: null }])
   window.location.hash = '/'
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
@@ -22,7 +24,7 @@ beforeEach(() => {
   vi.spyOn(api, 'reminders').mockResolvedValue([{ id: 1, work_order_id: 1, created_by: 4, text: 'Richiesta aggiornamenti', created_at: order.created_at }])
   vi.spyOn(api, 'assignments').mockResolvedValue([])
 })
-afterEach(() => { cleanup(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); clearDemoAccessKey(); vi.restoreAllMocks() })
 it('opens and closes the compact navigation menu without changing routes', async () => {
   render(<Layout title="Dashboard" section="dashboard"><p>Contenuto</p></Layout>)
   const menu = screen.getByRole('button', { name: 'Menu' })

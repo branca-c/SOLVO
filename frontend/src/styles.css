@@ -296,6 +296,11 @@ dd { margin: 0; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
 }
 
 .technician-page { max-width: 620px; margin: 0 auto; padding: 20px 16px 40px; }
+.demo-access-page { max-width: 520px; margin: 0 auto; padding: 64px 16px; }
+.demo-access-card { padding: 32px; }
+.demo-access-card > p:not(.eyebrow) { color: var(--muted); margin: 12px 0 24px; }
+.demo-access-card form { display: grid; gap: 18px; }
+.demo-access-card .notice { margin: 0 0 18px; }
 .technician-brand { display: flex; align-items: center; justify-content: space-between; color: #4548C9; margin-bottom: 24px; gap: 16px; }
 .technician-brand strong { font-size: 28px; }
 .technician-card { padding: 24px; overflow-wrap: anywhere; }

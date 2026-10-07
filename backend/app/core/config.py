@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     app_log_level: str = "INFO"
     database_url: PostgresDsn
     cors_allowed_origins: str = DEFAULT_CORS_ALLOWED_ORIGINS
+    solvo_demo_access_enabled: bool = False
+    solvo_demo_access_key: SecretStr = SecretStr("")
     assignment_action_secret: SecretStr = SecretStr("")
     technician_action_base_url: str = "http://127.0.0.1:5173"
     technician_action_token_ttl_minutes: int = Field(default=1440, ge=1, le=10080)

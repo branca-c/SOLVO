@@ -27,8 +27,9 @@ class ConnectionManager:
         self.clients: dict[WebSocket, asyncio.Lock] = {}
         self.loop: asyncio.AbstractEventLoop | None = None
 
-    async def connect(self, socket: WebSocket):
-        await socket.accept()
+    async def connect(self, socket: WebSocket, *, accepted: bool = False):
+        if not accepted:
+            await socket.accept()
         self.loop = asyncio.get_running_loop()
         self.clients[socket] = asyncio.Lock()
 

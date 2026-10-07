@@ -1,4 +1,5 @@
 import { realtimeUrl } from './backendUrl'
+import { getDemoAccessKey } from './demoAccess'
 
 export const eventTypes = [
   'work_order.created', 'work_order.updated', 'work_order.deleted', 'work_order.status_changed',
@@ -29,10 +30,19 @@ export function connectRealtime(onEvent: (event: RealtimeEvent) => void, onStatu
       socket = connection
       connection.onopen = () => {
         if (stopped || socket !== connection) return
+        const key = getDemoAccessKey()
+        if (key) {
+          connection.send(key)
+          return
+        }
         delay = 3000; onStatus('Live'); onOpen()
       }
       connection.onmessage = message => {
         if (stopped || socket !== connection) return
+        if (message.data === 'authorized') {
+          delay = 3000; onStatus('Live'); onOpen()
+          return
+        }
         let value: unknown
         try { value = JSON.parse(message.data) } catch { return }
         if (!value || typeof value !== 'object') return

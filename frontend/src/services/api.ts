@@ -1,6 +1,7 @@
 import type { Category, Technician, TelegramBindingLink } from '../types/referenceData'
 import type { Assignment, HistoryEntry, Reminder, WorkOrder, WorkOrderInput, WorkOrderStatus, Priority, WorkOrderDraft, AudioWorkOrderDraft, PublicAssignment, NotificationResult } from '../types/workOrder'
 import { apiUrl } from './backendUrl'
+import { getDemoAccessKey, rejectDemoAccess } from './demoAccess'
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) { super(message) }
@@ -23,12 +24,16 @@ export function errorDetail(body: unknown): string | undefined {
     return fields.length ? `Controlla i campi: ${[...new Set(fields)].join(', ')}.` : 'Controlla i dati inseriti.'
   }
 }
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, requiresDemoAccess = true): Promise<T> {
   let response: Response
   try {
     response = await fetch(apiUrl(path), {
       ...options,
-      headers: { Accept: 'application/json', ...(options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}) },
+      headers: {
+        Accept: 'application/json',
+        ...(options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+        ...(requiresDemoAccess && getDemoAccessKey() ? { 'X-SOLVO-DEMO-KEY': getDemoAccessKey()! } : {}),
+      },
     })
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw error
@@ -37,6 +42,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (response.ok && response.status === 204) return undefined as T
   const body: unknown = await response.json().catch(() => null)
   if (!response.ok) {
+    if (response.status === 401 && requiresDemoAccess) rejectDemoAccess()
     throw new ApiError(errorDetail(body) || (response.status === 404
       ? 'ODL non trovato.' : 'Impossibile completare la richiesta. Riprova tra poco.'), response.status)
   }
@@ -59,9 +65,9 @@ export const api = {
   addReminder: (id: number, createdBy: number, text: string) => request<Reminder>(`/work-orders/${id}/reminders`, { method: 'POST', body: JSON.stringify({ created_by: createdBy, text }) }),
   categories: () => request<Category[]>('/categories'),
   technicians: (categoryId?: number, signal?: AbortSignal) => request<Technician[]>(`/technicians${categoryId === undefined ? '' : `?category_id=${categoryId}`}`, { signal }),
-  publicAssignment: (token: string, signal?: AbortSignal) => request<PublicAssignment>(`/public/assignments/${encodeURIComponent(token)}`, { signal, cache: 'no-store' }),
-  publicAccept: (token: string) => request<PublicAssignment>(`/public/assignments/${encodeURIComponent(token)}/accept`, { method: 'POST' }),
-  publicReject: (token: string, rejection_notes: string | null) => request<PublicAssignment>(`/public/assignments/${encodeURIComponent(token)}/reject`, { method: 'POST', body: JSON.stringify({ rejection_notes }) }),
+  publicAssignment: (token: string, signal?: AbortSignal) => request<PublicAssignment>(`/public/assignments/${encodeURIComponent(token)}`, { signal, cache: 'no-store' }, false),
+  publicAccept: (token: string) => request<PublicAssignment>(`/public/assignments/${encodeURIComponent(token)}/accept`, { method: 'POST' }, false),
+  publicReject: (token: string, rejection_notes: string | null) => request<PublicAssignment>(`/public/assignments/${encodeURIComponent(token)}/reject`, { method: 'POST', body: JSON.stringify({ rejection_notes }) }, false),
   notifyAssignment: (id: number) => request<NotificationResult>(`/assignments/${id}/notify`, { method: 'POST' }),
   audioDraft: (audio: File, signal?: AbortSignal) => {
     const body = new FormData()
