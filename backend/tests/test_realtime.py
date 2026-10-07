@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models import WorkOrder, WorkOrderHistory
+from app.api import realtime as realtime_api
 from app.core.config import get_settings
 from app.services import realtime, work_orders
 from app.schemas.work_order import WorkOrderStatusUpdate
@@ -51,6 +52,23 @@ def test_broken_client_does_not_block_healthy_client():
         assert bad not in manager.clients
         assert good.messages == [{'type': 'work_order.updated'}]
     asyncio.run(run())
+
+
+def test_demo_access_websocket_disconnect_during_authentication_is_not_closed_again(monkeypatch):
+    class Socket:
+        def __init__(self):
+            self.close_codes = []
+        async def accept(self): pass
+        async def receive_text(self): raise realtime_api.WebSocketDisconnect()
+        async def close(self, code): self.close_codes.append(code)
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, 'solvo_demo_access_enabled', True)
+    socket = Socket()
+
+    asyncio.run(realtime_api.work_order_events(socket, settings))
+
+    assert socket.close_codes == []
 
 
 @pytest.fixture

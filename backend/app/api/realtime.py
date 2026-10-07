@@ -16,7 +16,9 @@ async def work_order_events(socket: WebSocket, settings: Settings = Depends(get_
         await socket.accept()
         try:
             submitted_key = await asyncio.wait_for(socket.receive_text(), timeout=5)
-        except (TimeoutError, WebSocketDisconnect):
+        except WebSocketDisconnect:
+            return
+        except TimeoutError:
             await socket.close(code=1008)
             return
         if not has_demo_access(submitted_key, settings):

@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from pydantic import Field, PostgresDsn, SecretStr, field_validator
+from pydantic import Field, SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_OLLAMA_KEEP_ALIVE = "30m"
@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_debug: bool = False
     app_log_level: str = "INFO"
-    database_url: PostgresDsn
+    database_url: str
     cors_allowed_origins: str = DEFAULT_CORS_ALLOWED_ORIGINS
     solvo_demo_access_enabled: bool = False
     solvo_demo_access_key: SecretStr = SecretStr("")
@@ -71,6 +71,16 @@ class Settings(BaseSettings):
                 raise ValueError("CORS_ALLOWED_ORIGINS accetta solo origini HTTP/HTTPS esplicite.")
         return ",".join(origins)
 
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, value: str, info: ValidationInfo) -> str:
+        parsed = urlsplit(value)
+        if parsed.scheme in {"postgresql", "postgresql+psycopg"} and parsed.hostname:
+            return value
+        if info.data.get("app_env") == "test" and value.startswith("sqlite:///"):
+            return value
+        raise ValueError("DATABASE_URL deve essere un URL PostgreSQL; SQLite è consentito solo con APP_ENV=test.")
+
     @property
     def cors_origins(self) -> list[str]:
         return self.cors_allowed_origins.split(",")
@@ -78,7 +88,7 @@ class Settings(BaseSettings):
     @property
     def sqlalchemy_database_url(self) -> str:
         """Use the installed psycopg driver for standard PostgreSQL/Neon URLs."""
-        url = str(self.database_url)
+        url = self.database_url
         if url.startswith("postgresql://"):
             return "postgresql+psycopg://" + url.removeprefix("postgresql://")
         return url

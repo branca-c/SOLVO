@@ -22,6 +22,14 @@ def test_standard_neon_database_url_uses_installed_psycopg_driver():
     )
 
 
+def test_sqlite_database_url_is_limited_to_explicit_test_environment():
+    settings = Settings(_env_file=None, app_env="test", database_url="sqlite:////tmp/solvo-e2e.sqlite3")
+
+    assert settings.sqlalchemy_database_url == "sqlite:////tmp/solvo-e2e.sqlite3"
+    with pytest.raises(ValidationError, match="SQLite è consentito solo"):
+        Settings(_env_file=None, database_url="sqlite:////tmp/solvo-e2e.sqlite3")
+
+
 def test_comma_separated_cors_origins_keep_local_development_origins():
     settings = Settings(
         _env_file=None,
