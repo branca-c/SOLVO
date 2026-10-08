@@ -1,12 +1,24 @@
 import pytest
 import httpx
 from pydantic import SecretStr
+from threading import Event, Thread, current_thread
+from sqlalchemy import create_engine, event, func, select
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import Technician
+from app.db.base import Base
+from app.models import (
+    Assignment, AssignmentStatus, Category, Priority, Technician,
+    WorkOrder, WorkOrderHistory,
+)
+from app.scripts.seed_demo import seed_demo
+from app.services import assignment_notifications, assignments
 from app.services.assignment_links import sign_assignment, validate_token, InvalidActionTokenError
 from app.services.assignment_notifications import _telegram_destination
-from app.services.notifications import MockNotificationProvider, TelegramNotificationProvider, NotificationUnavailableError
+from app.services.notifications import (
+    Delivery, MockNotificationProvider, TelegramNotificationProvider,
+    NotificationUnavailableError,
+)
 from tests.test_assignments_api import configure, start, history, assignment_url
 from tests.test_work_orders_api import create
 
@@ -339,3 +351,111 @@ def test_notify_commit_failure_rolls_back_history_and_preserves_assignment(api, 
         event.remove(WorkOrderHistory, 'before_insert', fail)
     assert history(client, order) == before
     assert client.get(assignment_url(order) + '/current').json()['status'] == 'PENDING'
+
+
+def test_feature_disabled_notify_keeps_legacy_lock_during_provider_send(
+    tmp_path, configuration, monkeypatch,
+):
+    monkeypatch.setattr(configuration, 'solvo_demo_session_enabled', False)
+    monkeypatch.setattr(configuration, 'notification_provider', 'telegram')
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'legacy-notification.sqlite3'}",
+        connect_args={'timeout': 5},
+    )
+    mutation_attempted = Event()
+
+    @event.listens_for(engine, 'connect')
+    def configure_sqlite(connection, _):
+        connection.isolation_level = None
+        connection.execute('PRAGMA foreign_keys=ON')
+
+    @event.listens_for(engine, 'begin')
+    def begin_immediate(connection):
+        if current_thread().name == 'concurrent-assignment-change':
+            mutation_attempted.set()
+        connection.exec_driver_sql('BEGIN IMMEDIATE')
+
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        seed_demo(db)
+        category = db.scalar(select(Category).where(Category.name == 'Elettrico'))
+        technician = db.scalar(
+            select(Technician).where(
+                Technician.category_id == category.id,
+                Technician.escalation_order == 1,
+            )
+        )
+        technician.telegram_chat_id = 'legacy-technician-chat'
+        order = WorkOrder(
+            code='SOLVO-LEGACY-NOTIFY', user_first_name='Demo', user_last_name='Legacy',
+            user_phone='1', fault_address='Via Test', category_id=category.id,
+            priority=Priority.MEDIA, description='Lock legacy durante provider send',
+        )
+        db.add(order)
+        db.commit()
+        assignment = assignments.start(db, order.id)
+        assignment_id = assignment.id
+        work_order_id = order.id
+
+    send_started = Event()
+    release_send = Event()
+    mutation_finished = Event()
+    destinations = []
+    errors = []
+
+    class BlockingTelegramProvider(TelegramNotificationProvider):
+        def __init__(self):
+            pass
+
+        def send(self, technician_id, message, *, destination=None):
+            destinations.append(destination)
+            send_started.set()
+            assert release_send.wait(timeout=5)
+            return Delivery('telegram', 'legacy-message', 'submitted')
+
+    monkeypatch.setattr(
+        assignment_notifications, 'create_notification_provider',
+        lambda settings: BlockingTelegramProvider(),
+    )
+
+    def send_notification():
+        try:
+            with Session(engine) as db:
+                assignment_notifications.notify(db, assignment_id, configuration)
+        except Exception as exc:
+            errors.append(exc)
+
+    def change_assignment():
+        try:
+            with Session(engine) as db:
+                assignments.no_response(db, assignment_id)
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            mutation_finished.set()
+
+    notifying = Thread(target=send_notification, name='legacy-notification')
+    changing = Thread(target=change_assignment, name='concurrent-assignment-change')
+    notifying.start()
+    assert send_started.wait(timeout=5)
+    changing.start()
+    assert mutation_attempted.wait(timeout=5)
+    assert not mutation_finished.wait(timeout=0.2)
+    release_send.set()
+    notifying.join(timeout=5)
+    changing.join(timeout=5)
+
+    assert not notifying.is_alive()
+    assert not changing.is_alive()
+    assert errors == []
+    assert destinations == ['legacy-technician-chat']
+    with Session(engine) as db:
+        assert db.get(Assignment, assignment_id).status == AssignmentStatus.NO_RESPONSE
+        assert db.scalar(select(func.count()).select_from(WorkOrderHistory).where(
+            WorkOrderHistory.work_order_id == work_order_id,
+            WorkOrderHistory.event_type == 'ASSIGNMENT_NOTIFICATION_SENT',
+        )) == 1
+        assert db.scalar(select(func.count()).select_from(Assignment).where(
+            Assignment.work_order_id == work_order_id,
+        )) == 2
+    engine.dispose()

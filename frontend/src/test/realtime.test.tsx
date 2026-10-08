@@ -6,6 +6,7 @@ import { Dashboard } from '../pages/Dashboard'
 import { WorkOrderDetail } from '../pages/WorkOrderDetail'
 import { api } from '../services/api'
 import { clearDemoAccessKey, setDemoAccessKey } from '../services/demoAccess'
+import { clearDemoSessionToken, setDemoSessionToken } from '../services/demoSession'
 import { order } from './fixtures'
 
 class Socket {
@@ -20,7 +21,7 @@ class Socket {
   emit(id: number) { this.onmessage?.({ data: JSON.stringify({ type: 'assignment.accepted', work_order_id: id, timestamp: '2026-09-08T00:00:00Z' }) }) }
 }
 beforeEach(() => { Socket.instances = []; vi.stubGlobal('WebSocket', Socket) })
-afterEach(() => { cleanup(); clearDemoAccessKey(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); clearDemoAccessKey(); clearDemoSessionToken(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 it('derives WS/WSS URLs and reconnects with delay, then cleans up', () => {
   vi.useFakeTimers()
@@ -59,6 +60,22 @@ it('sends the demo key only as the first WebSocket frame, never in the URL', () 
   socket.onopen?.()
   expect(socket.url).not.toContain('session-only-key')
   expect(socket.send).toHaveBeenCalledWith('session-only-key')
+  expect(opened).not.toHaveBeenCalled()
+  socket.onmessage?.({ data: 'authorized' })
+  expect(opened).toHaveBeenCalledOnce()
+})
+
+it('sends the session token only after the demo-key acknowledgement', () => {
+  setDemoAccessKey('demo-key')
+  setDemoSessionToken('exclusive-session-token')
+  const opened = vi.fn()
+  connectRealtime(vi.fn(), vi.fn(), opened)
+  const socket = Socket.instances[0]
+  socket.onopen?.()
+  expect(socket.url).not.toContain('exclusive-session-token')
+  expect(socket.send).toHaveBeenNthCalledWith(1, 'demo-key')
+  socket.onmessage?.({ data: 'demo-key-authorized' })
+  expect(socket.send).toHaveBeenNthCalledWith(2, 'exclusive-session-token')
   expect(opened).not.toHaveBeenCalled()
   socket.onmessage?.({ data: 'authorized' })
   expect(opened).toHaveBeenCalledOnce()

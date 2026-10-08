@@ -12,12 +12,14 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.db.session import get_db
 from app.models import Technician
+from app.services import demo_sessions
 from app.services.notifications import NotificationUnavailableError, TelegramNotificationProvider
 from app.services.telegram_binding import (
     InvalidTelegramBindingTokenError,
     TelegramBindingConfigurationError,
     confirmation_bot_token,
     create_binding_token,
+    validate_demo_binding_token,
     normalized_bot_username,
     validate_binding_token,
     webhook_secret,
@@ -78,8 +80,35 @@ def telegram_webhook(
         return {"ok": True}
 
     destination = str(chat_id)
+    payload = match.group(2)
+    if payload.startswith("d1_"):
+        try:
+            if not settings.solvo_demo_session_enabled:
+                raise InvalidTelegramBindingTokenError("Token non valido o scaduto.")
+            generation = validate_demo_binding_token(payload, settings)
+            session = demo_sessions.lock_state(db)
+            if (
+                not demo_sessions.is_active(session, demo_sessions.utc_now())
+                or session.generation != generation
+            ):
+                raise InvalidTelegramBindingTokenError("Token non valido o scaduto.")
+            if session.telegram_chat_id and not hmac.compare_digest(
+                session.telegram_chat_id, destination
+            ):
+                db.rollback()
+                _confirmation(settings, destination, "SOLVO: il collegamento non può essere completato.")
+                return {"ok": True}
+            session.telegram_chat_id = destination
+            db.commit()
+        except InvalidTelegramBindingTokenError:
+            db.rollback()
+            _confirmation(settings, destination, "SOLVO: link di collegamento non valido o scaduto.")
+            return {"ok": True}
+        _confirmation(settings, destination, "SOLVO: Telegram collegato alla sessione demo.")
+        return {"ok": True}
+
     try:
-        technician_id = validate_binding_token(match.group(2), settings)
+        technician_id = validate_binding_token(payload, settings)
     except InvalidTelegramBindingTokenError:
         _confirmation(settings, destination, "SOLVO: link di collegamento non valido o scaduto.")
         return {"ok": True}

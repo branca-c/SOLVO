@@ -11,6 +11,7 @@ import { Layout } from '../components/Layout'
 import { api } from '../services/api'
 import { clearCategoriesCache } from '../hooks/useCategories'
 import { clearDemoAccessKey, setDemoAccessKey } from '../services/demoAccess'
+import { clearDemoSessionToken } from '../services/demoSession'
 import { order } from './fixtures'
 beforeEach(() => {
   clearCategoriesCache()
@@ -23,8 +24,11 @@ beforeEach(() => {
   vi.spyOn(api, 'history').mockResolvedValue([{ id: 1, work_order_id: 1, event_type: 'CREATED', description: 'ODL creata: APERTO', created_at: order.created_at }])
   vi.spyOn(api, 'reminders').mockResolvedValue([{ id: 1, work_order_id: 1, created_by: 4, text: 'Richiesta aggiornamenti', created_at: order.created_at }])
   vi.spyOn(api, 'assignments').mockResolvedValue([])
+  vi.spyOn(api, 'acquireDemoSession').mockResolvedValue({
+    enabled: false, session_token: null, expires_at: null, telegram_linked: false,
+  })
 })
-afterEach(() => { cleanup(); clearDemoAccessKey(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); clearDemoAccessKey(); clearDemoSessionToken(); vi.restoreAllMocks() })
 it('opens and closes the compact navigation menu without changing routes', async () => {
   render(<Layout title="Dashboard" section="dashboard"><p>Contenuto</p></Layout>)
   const menu = screen.getByRole('button', { name: 'Menu' })
@@ -134,7 +138,7 @@ it('opens technicians from the sidebar and shows routing information', async () 
     { id: 4, first_name: 'Demo 4', last_name: 'Idraulico', phone: '+12025550104', email: null, category_id: 2, category_name: 'Idraulico', escalation_order: 4, is_team_leader: true, telegram_linked: false },
   ])
   render(<App />)
-  await userEvent.click(screen.getByRole('link', { name: 'Tecnici' }))
+  await userEvent.click(await screen.findByRole('link', { name: 'Tecnici' }))
   expect(await screen.findByText('Demo 4 Idraulico')).toBeTruthy()
   const row = screen.getByText('Demo 4 Idraulico').closest('tr')!
   expect(within(row).getByText('Caposquadra')).toBeTruthy()

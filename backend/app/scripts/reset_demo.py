@@ -30,27 +30,22 @@ def _count(db: Session, model: type[object]) -> int:
     return int(db.scalar(select(func.count()).select_from(model)) or 0)
 
 
-def reset_demo(db: Session, *, clear_telegram_bindings: bool = False) -> dict[str, int]:
-    """Remove runtime ODL data and restore missing demo reference data atomically."""
+def reset_demo_data(db: Session, *, clear_telegram_bindings: bool = False) -> dict[str, int]:
+    """Stage runtime cleanup and reference reseeding in the caller's transaction."""
     counts = {model.__tablename__: _count(db, model) for model in RUNTIME_MODELS}  # type: ignore[attr-defined]
-    try:
-        # Child rows are deleted explicitly in FK-safe order. Their FKs also use
-        # ON DELETE CASCADE as a database backstop for ordinary ODL deletion.
-        for model in RUNTIME_MODELS:
-            db.execute(delete(model))
-        cleared_bindings = 0
-        if clear_telegram_bindings:
-            result = db.execute(
-                update(Technician)
-                .where(Technician.telegram_chat_id.is_not(None))
-                .values(telegram_chat_id=None)
-            )
-            cleared_bindings = int(result.rowcount or 0)
-        seed_demo(db, commit=False)
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
+    # Child rows are deleted explicitly in FK-safe order. Their FKs also use
+    # ON DELETE CASCADE as a database backstop for ordinary ODL deletion.
+    for model in RUNTIME_MODELS:
+        db.execute(delete(model))
+    cleared_bindings = 0
+    if clear_telegram_bindings:
+        result = db.execute(
+            update(Technician)
+            .where(Technician.telegram_chat_id.is_not(None))
+            .values(telegram_chat_id=None)
+        )
+        cleared_bindings = int(result.rowcount or 0)
+    seed_demo(db, commit=False)
 
     return {
         **counts,
@@ -58,6 +53,17 @@ def reset_demo(db: Session, *, clear_telegram_bindings: bool = False) -> dict[st
         "technicians": _count(db, Technician),
         "telegram_bindings_cleared": cleared_bindings,
     }
+
+
+def reset_demo(db: Session, *, clear_telegram_bindings: bool = False) -> dict[str, int]:
+    """Remove runtime ODL data and restore missing demo reference data atomically."""
+    try:
+        counts = reset_demo_data(db, clear_telegram_bindings=clear_telegram_bindings)
+        db.commit()
+        return counts
+    except Exception:
+        db.rollback()
+        raise
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

@@ -1,9 +1,12 @@
+// @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError, errorDetail } from '../services/api'
 import { newestFirst, summarize } from '../services/format'
 import { transitions } from '../types/workOrder'
 import { order } from './fixtures'
-afterEach(() => vi.unstubAllGlobals())
+import { clearDemoAccessKey, setDemoAccessKey } from '../services/demoAccess'
+import { clearDemoSessionToken, setDemoSessionToken } from '../services/demoSession'
+afterEach(() => { clearDemoAccessKey(); clearDemoSessionToken(); vi.unstubAllGlobals() })
 describe('ODL helpers', () => {
   it('counts all statuses and urgent orders without counting cancelled orders as complete', () => {
     const orders = [order, { ...order, id: 2, status: 'IN_CORSO' as const }, { ...order, id: 3, status: 'CHIUSO' as const }, { ...order, id: 4, status: 'EVASO' as const }, { ...order, id: 5, status: 'ANNULLATO' as const }]
@@ -25,6 +28,19 @@ describe('API contracts', () => {
     vi.stubGlobal('fetch', fetcher)
     expect(await api.list({ status: 'APERTO', priority: 'URGENTE' })).toEqual([order])
     expect(fetcher.mock.calls[0][0]).toBe('/api/work-orders?status=APERTO&priority=URGENTE')
+  })
+  it('sends the demo key and exclusive session in headers, not in the URL', async () => {
+    setDemoAccessKey('demo-key')
+    setDemoSessionToken('session-token')
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify([])))
+    vi.stubGlobal('fetch', fetcher)
+    await api.categories()
+    const [path, options] = fetcher.mock.calls[0]
+    expect(path).toBe('/api/categories')
+    expect(options.headers).toMatchObject({
+      'X-SOLVO-DEMO-KEY': 'demo-key',
+      'X-SOLVO-DEMO-SESSION': 'session-token',
+    })
   })
   it('sends only create fields, then status to its dedicated endpoint', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(order)))

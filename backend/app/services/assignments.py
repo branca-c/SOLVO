@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.config import get_settings
+from app.core.demo_access import DEMO_SESSION_GENERATION_INFO
 from app.services.realtime import EventType, publish
 from app.domain.assignment_routing import RoutingConflictError, select_technician
 from app.domain.work_order_status import validate_transition
@@ -23,12 +25,18 @@ def _transaction(db: Session) -> Iterator[list[tuple[EventType, int]]]:
     events: list[tuple[EventType, int]] = []
     try:
         yield events
+        event_generation = db.info.get(DEMO_SESSION_GENERATION_INFO)
+        settings = get_settings()
+        if event_generation is None and settings.solvo_demo_session_enabled:
+            from app.services import demo_sessions
+
+            event_generation = demo_sessions.active_generation(db, settings)
         db.commit()
     except Exception:
         db.rollback()
         raise
     for event_type, order_id in events:
-        publish(event_type, order_id)
+        publish(event_type, order_id, generation=event_generation)
 
 
 def _work_order(db: Session, work_order_id: int, *, lock: bool = False) -> WorkOrder:

@@ -1,14 +1,23 @@
 import { expect, test } from '@playwright/test'
 
-test('covers the deterministic demo workflow from gated ODL creation to technician acceptance', async ({ page, context }) => {
+test('isolates visitors and covers the demo workflow through release and clean reacquisition', async ({ page, context, browser }) => {
   const demoKey = process.env.SOLVO_DEMO_ACCESS_KEY
   if (!demoKey) throw new Error('SOLVO_DEMO_ACCESS_KEY is required by the E2E configuration.')
 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Accedi alla demo' })).toBeVisible()
   await page.getByLabel('Chiave di accesso').fill(demoKey)
+  const acquired = page.waitForResponse(response => response.url().endsWith('/api/demo-session/acquire'))
   await page.getByRole('button', { name: 'Entra nella demo' }).click()
+  expect((await acquired).status()).toBe(200)
   await expect(page.getByRole('link', { name: 'SOLVO — Dashboard' })).toBeVisible()
+
+  const secondContext = await browser.newContext()
+  const secondPage = await secondContext.newPage()
+  await secondPage.goto('/')
+  await secondPage.getByLabel('Chiave di accesso').fill(demoKey)
+  await secondPage.getByRole('button', { name: 'Entra nella demo' }).click()
+  await expect(secondPage.getByRole('heading', { name: 'Demo temporaneamente in uso' })).toBeVisible()
 
   await page.goto('/#/odl/nuovo')
   await page.getByLabel(/^Nome/).fill('E2E')
@@ -24,13 +33,15 @@ test('covers the deterministic demo workflow from gated ODL creation to technici
   const workOrderCode = await page.locator('.detail-code').textContent()
   await expect(page.locator('.order-details .badges')).toContainText('APERTO')
   await page.getByRole('button', { name: 'Assegna tecnico' }).click()
-  await expect(page.getByText('Tentativo 1')).toBeVisible()
+  await expect(page.getByText('Tentativo 1', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Nessuna risposta' }).click()
   await expect(page.getByText('Nessuna risposta registrata. Assegnazione avanzata.')).toBeVisible()
-  await expect(page.getByText('Tentativo 2')).toBeVisible()
+  await expect(page.getByText('Tentativo 2', { exact: true })).toBeVisible()
 
+  const notified = page.waitForResponse(response => /\/api\/assignments\/\d+\/notify$/.test(response.url()))
   await page.getByRole('button', { name: 'Invia Telegram' }).click()
+  expect((await notified).status()).toBe(200)
   await expect(page.getByText('Invio simulato: nessun messaggio Telegram inviato.')).toBeVisible()
   const actionUrl = await page.getByRole('link', { name: 'Apri link tecnico' }).getAttribute('href')
   expect(actionUrl).toMatch(/^http:\/\/127\.0\.0\.1:5173\/tecnico\/assegnazione\/v1\./)
@@ -44,4 +55,14 @@ test('covers the deterministic demo workflow from gated ODL creation to technici
 
   await page.reload()
   await expect(page.locator('.order-details .badges')).toContainText('IN CORSO')
+
+  page.on('dialog', dialog => dialog.accept())
+  await page.getByRole('button', { name: 'Termina sessione demo' }).click()
+  await expect(page.getByRole('heading', { name: 'Accedi alla demo' })).toBeVisible()
+
+  await secondPage.getByRole('button', { name: 'Riprova ora' }).click()
+  await expect(secondPage.getByRole('link', { name: 'SOLVO — Dashboard' })).toBeVisible()
+  await secondPage.goto('/#/odl')
+  await expect(secondPage.getByRole('heading', { name: 'Nessun ODL da mostrare' })).toBeVisible()
+  await secondContext.close()
 })

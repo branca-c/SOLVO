@@ -329,3 +329,6 @@ dd { margin: 0; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
 
 .notes-separator { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
 .reminder-action small { display: block; color: var(--muted); }
+.demo-session-panel { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 20px; padding: 16px; }
+.demo-session-panel h2, .demo-session-panel p { margin: 0 0 4px; }
+@media (max-width: 720px) { .demo-session-panel { align-items: stretch; flex-direction: column; } }

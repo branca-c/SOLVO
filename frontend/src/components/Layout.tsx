@@ -1,6 +1,11 @@
 import { useState, type ReactNode } from 'react'
 import { Icon } from './Icon'
-export function Layout({ title, section, children }: { title: string; section: 'dashboard' | 'odl' | 'tecnici'; children: ReactNode }) {
+import { DemoSessionPanel } from './DemoSessionPanel'
+import type { DemoSessionStatus } from '../services/api'
+export function Layout({ title, section, children, demoSession, onDemoSession, onDemoReleased }: {
+  title: string; section: 'dashboard' | 'odl' | 'tecnici'; children: ReactNode
+  demoSession?: DemoSessionStatus; onDemoSession?: (status: DemoSessionStatus) => void; onDemoReleased?: () => void
+}) {
   const [menuOpen, setMenuOpen] = useState(false)
   const closeMenu = () => setMenuOpen(false)
   return <div className="app-shell">
@@ -19,7 +24,10 @@ export function Layout({ title, section, children }: { title: string; section: '
     {menuOpen && <button type="button" className="mobile-nav-scrim" aria-label="Chiudi menu di navigazione" onClick={closeMenu} />}
     <div className="workspace">
       <header className="topbar"><button type="button" className="mobile-menu-toggle" aria-controls="primary-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}><Icon name={menuOpen ? 'close' : 'menu'} /><span>{menuOpen ? 'Chiudi' : 'Menu'}</span></button><div className="breadcrumb">Centro di controllo <span>/</span> <strong>{title}</strong></div><div className="operator"><span className="avatar">OP</span><div><strong>Operatore</strong><small>Postazione locale</small></div></div></header>
-      <main id="main-content" tabIndex={-1}>{children}</main>
+      <main id="main-content" tabIndex={-1}>
+        {demoSession && onDemoSession && onDemoReleased && <DemoSessionPanel status={demoSession} onStatus={onDemoSession} onReleased={onDemoReleased} />}
+        {children}
+      </main>
       <footer className="page-footer"><span>SOLVO · Gestione manutenzioni</span><span>Ogni intervento, sotto controllo.</span></footer>
     </div>
   </div>

@@ -35,6 +35,7 @@ export function TechnicianAssignment({ token }: { token: string }) {
       <dl><dt>Categoria</dt><dd>{assignment.category}</dd><dt>Indirizzo</dt><dd>{assignment.fault_address}</dd><dt>Richiedente</dt><dd>{assignment.requester_name}</dd><dt>Telefono</dt><dd><a href={`tel:${assignment.requester_phone}`}>{assignment.requester_phone}</a></dd></dl>
       <h2>Descrizione del guasto</h2><p className="record-notes">{assignment.description}</p>
       {assignment.status === 'ACCEPTED' && <div role="status" className="notice notice-success">Intervento accettato</div>}
+      {assignment.status === 'ACCEPTED' && <p>Torna alla dashboard SOLVO per proseguire o terminare la sessione demo.</p>}
       {assignment.status === 'REJECTED' && <div role="status" className="notice"><div>Intervento rifiutato<p>SOLVO ha inoltrato la richiesta al prossimo tecnico. La notifica sarà inviata dall’operatore.</p></div></div>}
       {assignment.rejection_notes && <p>Note: {assignment.rejection_notes}</p>}
       {error && <ErrorMessage message={error} />}

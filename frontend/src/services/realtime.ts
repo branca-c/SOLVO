@@ -1,5 +1,6 @@
 import { realtimeUrl } from './backendUrl'
 import { getDemoAccessKey } from './demoAccess'
+import { getDemoSessionToken } from './demoSession'
 
 export const eventTypes = [
   'work_order.created', 'work_order.updated', 'work_order.deleted', 'work_order.status_changed',
@@ -16,6 +17,7 @@ export function connectRealtime(onEvent: (event: RealtimeEvent) => void, onStatu
   let timer: ReturnType<typeof setTimeout> | undefined
   let stopped = false
   let delay = 3000
+  let awaitingSessionAuthorization = false
   function retry() {
     if (stopped || timer) return
     onStatus('Riconnessione…')
@@ -32,6 +34,7 @@ export function connectRealtime(onEvent: (event: RealtimeEvent) => void, onStatu
         if (stopped || socket !== connection) return
         const key = getDemoAccessKey()
         if (key) {
+          awaitingSessionAuthorization = Boolean(getDemoSessionToken())
           connection.send(key)
           return
         }
@@ -41,6 +44,11 @@ export function connectRealtime(onEvent: (event: RealtimeEvent) => void, onStatu
         if (stopped || socket !== connection) return
         if (message.data === 'authorized') {
           delay = 3000; onStatus('Live'); onOpen()
+          return
+        }
+        if (message.data === 'demo-key-authorized' && awaitingSessionAuthorization) {
+          awaitingSessionAuthorization = false
+          connection.send(getDemoSessionToken()!)
           return
         }
         let value: unknown

@@ -1,5 +1,6 @@
 from app.api.reference_data import router as reference_data_router
 from app.api.telegram import router as telegram_router
+from app.api.demo_sessions import router as demo_sessions_router
 from fastapi import APIRouter
 
 from app.api.public_assignments import router as public_assignments_router
@@ -10,6 +11,7 @@ from app.api.work_orders import router as work_orders_router
 from app.schemas.health import HealthResponse
 
 api_router = APIRouter()
+api_router.include_router(demo_sessions_router)
 api_router.include_router(reference_data_router)
 api_router.include_router(telegram_router)
 api_router.include_router(realtime_router)

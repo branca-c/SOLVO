@@ -728,6 +728,18 @@ server acknowledgement, so it never appears in a URL or query string. Signed
 technician assignment URLs and the Telegram webhook remain independently secured
 and bypass this shared gate.
 
+An opt-in exclusive demo lease (`SOLVO_DEMO_SESSION_ENABLED`, disabled by default)
+is persisted as a singleton PostgreSQL row. Acquisition serializes on a PostgreSQL
+transaction advisory lock plus row lock, cleans expired runtime data, and stores
+only a SHA-256 hash of the random browser token. Operational HTTP APIs require the
+token in `X-SOLVO-DEMO-SESSION`; realtime sends it as the second WebSocket frame,
+never in a URL. Heartbeats renew the configurable idle deadline. Release and
+expired-session takeover reuse the reset service in the same transaction, preserving
+reference data and permanent technician bindings. A separately signed, expiring,
+generation-bound Telegram deep link may attach a private chat to the current lease;
+notification delivery is redirected there without changing category routing, the
+assigned technician, or signed technician actions.
+
 Cloudflare Quick Tunnel and `cloudflared` remain local development/demo tooling
 only. The deployed backend has no tunnel dependency or committed tunnel hostname.
 The current application writes no uploaded audio to durable storage: multipart

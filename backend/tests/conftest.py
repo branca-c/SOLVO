@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
-from app.db.session import get_db
+from app.db.session import get_db, prepare_request_session
 from app.main import create_app
 from app.models import Category, User, UserRole
 
@@ -37,11 +37,12 @@ def api():
 
     def override_db():
         with Session(engine) as db:
+            prepare_request_session(db)
             yield db
 
     app = create_app()
     app.dependency_overrides[get_db] = override_db
+    app.state.session_factory = lambda: Session(engine)
     with TestClient(app) as client:
         yield client, engine
     engine.dispose()
-

@@ -28,6 +28,7 @@ def test_domain_metadata_contains_expected_tables_and_foreign_keys() -> None:
         "reminders",
         "work_order_history",
         "work_order_notes",
+        "demo_sessions",
     }
 
     assert set(Base.metadata.tables) == expected_tables

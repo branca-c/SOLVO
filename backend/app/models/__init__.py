@@ -1,6 +1,7 @@
 from app.models.work_order_note import WorkOrderNote
 from app.models.assignment import Assignment
 from app.models.category import Category
+from app.models.demo_session import DemoSession
 from app.models.enums import AssignmentStatus, Priority, UserRole, WorkOrderStatus
 from app.models.reminder import Reminder
 from app.models.technician import Technician
@@ -12,6 +13,7 @@ __all__ = [
     "Assignment",
     "AssignmentStatus",
     "Category",
+    "DemoSession",
     "Priority",
     "Reminder",
     "Technician",
@@ -22,4 +24,3 @@ __all__ = [
     "WorkOrderHistory",
     "WorkOrderStatus",
 ]
-

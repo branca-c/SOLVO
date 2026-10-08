@@ -12,6 +12,14 @@ frontend bundle; the tester-entered copy is held only in sessionStorage.
 Signed technician action links and the Telegram webhook keep their separate security
 mechanisms and do not require the demo key.
 
+When `SOLVO_DEMO_SESSION_ENABLED=true`, successful gate entry automatically acquires
+one exclusive database-backed demo lease. A second browser sees “Demo temporaneamente
+in uso” until the lease is released or its configurable idle timeout expires. The
+browser keeps the random lease token only in `sessionStorage`; the database stores
+only its hash. Ending the session atomically removes runtime ODL/workflow data and
+the session Telegram link while preserving reference data and permanent technician
+Telegram bindings. `SOLVO_DEMO_SESSION_IDLE_MINUTES=10` is the default lease timeout.
+
 ## Source of truth
 
 - Functional and technical reference: `docs/design/SOLVO_Guida_Tecnica_MVP_v0.1 (2).pdf`

@@ -2,9 +2,10 @@ import type { Category, Technician, TelegramBindingLink } from '../types/referen
 import type { Assignment, HistoryEntry, Reminder, WorkOrder, WorkOrderInput, WorkOrderStatus, Priority, WorkOrderDraft, AudioWorkOrderDraft, PublicAssignment, NotificationResult } from '../types/workOrder'
 import { apiUrl } from './backendUrl'
 import { getDemoAccessKey, rejectDemoAccess } from './demoAccess'
+import { getDemoSessionToken, rejectDemoSession } from './demoSession'
 
 export class ApiError extends Error {
-  constructor(message: string, public status: number) { super(message) }
+  constructor(message: string, public status: number, public body?: unknown) { super(message) }
 }
 const fieldLabels: Record<string, string> = {
   user_first_name: 'Nome', user_last_name: 'Cognome', user_phone: 'Telefono',
@@ -24,7 +25,10 @@ export function errorDetail(body: unknown): string | undefined {
     return fields.length ? `Controlla i campi: ${[...new Set(fields)].join(', ')}.` : 'Controlla i dati inseriti.'
   }
 }
-async function request<T>(path: string, options: RequestInit = {}, requiresDemoAccess = true): Promise<T> {
+async function request<T>(
+  path: string, options: RequestInit = {}, requiresDemoAccess = true,
+  requiresDemoSession = requiresDemoAccess,
+): Promise<T> {
   let response: Response
   try {
     response = await fetch(apiUrl(path), {
@@ -33,6 +37,7 @@ async function request<T>(path: string, options: RequestInit = {}, requiresDemoA
         Accept: 'application/json',
         ...(options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
         ...(requiresDemoAccess && getDemoAccessKey() ? { 'X-SOLVO-DEMO-KEY': getDemoAccessKey()! } : {}),
+        ...(requiresDemoSession && getDemoSessionToken() ? { 'X-SOLVO-DEMO-SESSION': getDemoSessionToken()! } : {}),
       },
     })
   } catch (error) {
@@ -42,9 +47,10 @@ async function request<T>(path: string, options: RequestInit = {}, requiresDemoA
   if (response.ok && response.status === 204) return undefined as T
   const body: unknown = await response.json().catch(() => null)
   if (!response.ok) {
-    if (response.status === 401 && requiresDemoAccess) rejectDemoAccess()
+    if (response.status === 401 && requiresDemoSession && getDemoSessionToken()) rejectDemoSession()
+    else if (response.status === 401 && requiresDemoAccess) rejectDemoAccess()
     throw new ApiError(errorDetail(body) || (response.status === 404
-      ? 'ODL non trovato.' : 'Impossibile completare la richiesta. Riprova tra poco.'), response.status)
+      ? 'ODL non trovato.' : 'Impossibile completare la richiesta. Riprova tra poco.'), response.status, body)
   }
   if (body === null) throw new ApiError('Il servizio ha restituito una risposta non valida.', response.status)
   return body as T
@@ -53,6 +59,12 @@ export function messageFor(error: unknown): string {
   return error instanceof Error ? error.message : 'Si è verificato un errore. Riprova.'
 }
 export const api = {
+  acquireDemoSession: () => request<DemoSessionAcquisition>('/demo-session/acquire', { method: 'POST' }, true, false),
+  demoSessionStatus: () => request<DemoSessionStatus>('/demo-session'),
+  heartbeatDemoSession: () => request<DemoSessionStatus>('/demo-session/heartbeat', { method: 'POST' }),
+  releaseDemoSession: () => request<void>('/demo-session', { method: 'DELETE' }),
+  demoSessionTelegramLink: () => request<TelegramBindingLink>('/demo-session/telegram-link', { method: 'POST' }),
+  unlinkDemoSessionTelegram: () => request<{ telegram_linked: boolean }>('/demo-session/telegram-link', { method: 'DELETE' }),
   update: (id: number, data: WorkOrderInput) => request<WorkOrder>(`/work-orders/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id: number) => request<void>(`/work-orders/${id}`, { method: 'DELETE' }),
   notes: (id: number, signal?: AbortSignal) => request<import('../types/workOrder').WorkOrderNote[]>(`/work-orders/${id}/notes`, { signal }),
@@ -89,4 +101,14 @@ export const api = {
   reminders: (id: number, signal?: AbortSignal) => request<Reminder[]>(`/work-orders/${id}/reminders`, { signal }),
   history: (id: number, signal?: AbortSignal) => request<HistoryEntry[]>(`/work-orders/${id}/history`, { signal }),
   assignments: (id: number, signal?: AbortSignal) => request<Assignment[]>(`/work-orders/${id}/assignments`, { signal }),
+}
+
+export interface DemoSessionStatus {
+  enabled: boolean
+  expires_at: string | null
+  telegram_linked: boolean
+}
+
+export interface DemoSessionAcquisition extends DemoSessionStatus {
+  session_token: string | null
 }

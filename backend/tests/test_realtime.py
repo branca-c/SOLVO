@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime
 
 import pytest
+from fastapi import WebSocketDisconnect
 from pydantic import SecretStr
 from sqlalchemy import event
 from sqlalchemy.exc import SQLAlchemyError
@@ -54,6 +55,34 @@ def test_broken_client_does_not_block_healthy_client():
     asyncio.run(run())
 
 
+def test_delayed_old_generation_event_is_not_sent_to_current_session():
+    class Socket:
+        def __init__(self):
+            self.messages = []
+            self.close_codes = []
+        async def accept(self): pass
+        async def send_json(self, data): self.messages.append(data)
+        async def close(self, code): self.close_codes.append(code)
+
+    async def run():
+        manager = realtime.ConnectionManager()
+        manager.set_generation_resolver(lambda: (True, 2))
+        old, current = Socket(), Socket()
+        await manager.connect(old, generation=1)
+        await manager.connect(current, generation=2)
+
+        await manager.broadcast({'type': 'work_order.updated'}, generation=1)
+        assert old.close_codes == [1008]
+        assert old not in manager.clients
+        assert current in manager.clients
+        assert current.messages == []
+
+        await manager.broadcast({'type': 'work_order.created'}, generation=2)
+        assert current.messages == [{'type': 'work_order.created'}]
+
+    asyncio.run(run())
+
+
 def test_demo_access_websocket_disconnect_during_authentication_is_not_closed_again(monkeypatch):
     class Socket:
         def __init__(self):
@@ -71,10 +100,55 @@ def test_demo_access_websocket_disconnect_during_authentication_is_not_closed_ag
     assert socket.close_codes == []
 
 
+def test_stale_generation_socket_is_closed_before_next_session_event(api, monkeypatch):
+    client, _ = api
+    settings = get_settings()
+    monkeypatch.setattr(settings, 'solvo_demo_access_enabled', True)
+    monkeypatch.setattr(settings, 'solvo_demo_access_key', SecretStr('ws-generation-key'))
+    monkeypatch.setattr(settings, 'solvo_demo_session_enabled', True)
+    first = client.post(
+        '/api/demo-session/acquire', headers={'X-SOLVO-DEMO-KEY': 'ws-generation-key'}
+    ).json()
+    first_headers = {
+        'X-SOLVO-DEMO-KEY': 'ws-generation-key',
+        'X-SOLVO-DEMO-SESSION': first['session_token'],
+    }
+
+    with pytest.raises(WebSocketDisconnect) as closed:
+        with client.websocket_connect('/ws/work-orders') as socket:
+            socket.send_text('ws-generation-key')
+            assert socket.receive_text() == 'demo-key-authorized'
+            socket.send_text(first['session_token'])
+            assert socket.receive_text() == 'authorized'
+
+            assert client.delete('/api/demo-session', headers=first_headers).status_code == 204
+            second = client.post(
+                '/api/demo-session/acquire',
+                headers={'X-SOLVO-DEMO-KEY': 'ws-generation-key'},
+            ).json()
+            second_headers = {
+                'X-SOLVO-DEMO-KEY': 'ws-generation-key',
+                'X-SOLVO-DEMO-SESSION': second['session_token'],
+            }
+            response = client.post('/api/work-orders', headers=second_headers, json={
+                'user_first_name': 'Demo', 'user_last_name': 'Due', 'user_phone': '1',
+                'fault_address': 'Via Test', 'category_id': 1, 'priority': 'MEDIA',
+                'description': 'Evento riservato alla nuova generation',
+            })
+            assert response.status_code == 201
+            socket.receive_json()
+
+    assert closed.value.code == 1008
+    assert not realtime.manager.clients
+
+
 @pytest.fixture
 def published(monkeypatch):
     events = []
-    monkeypatch.setattr(realtime.manager, 'submit', events.append)
+    monkeypatch.setattr(
+        realtime.manager, 'submit',
+        lambda event, generation=None: events.append(event),
+    )
     return events
 
 
@@ -121,7 +195,7 @@ def test_assignment_and_public_action_events(api, published, monkeypatch):
 def test_publish_is_after_commit_and_failure_does_not_break_business_operation(api, monkeypatch):
     client, engine = api
     observed = []
-    def fail(data):
+    def fail(data, generation=None):
         with Session(engine) as db:
             observed.append(db.get(WorkOrder, data['work_order_id']).code)
         raise RuntimeError('broken publisher')

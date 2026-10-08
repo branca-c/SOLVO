@@ -1,12 +1,14 @@
-import { randomUUID } from 'node:crypto'
 import { defineConfig, devices } from '@playwright/test'
 
 const testEnvironment = {
   APP_ENV: 'test',
   DATABASE_URL: 'sqlite:////tmp/solvo-e2e.sqlite3',
+  CORS_ALLOWED_ORIGINS: 'http://127.0.0.1:5173',
   SOLVO_DEMO_ACCESS_ENABLED: 'true',
-  SOLVO_DEMO_ACCESS_KEY: randomUUID(),
-  ASSIGNMENT_ACTION_SECRET: randomUUID(),
+  SOLVO_DEMO_ACCESS_KEY: 'solvo-e2e-access-key-not-a-real-secret',
+  SOLVO_DEMO_SESSION_ENABLED: 'true',
+  SOLVO_DEMO_SESSION_IDLE_MINUTES: '10',
+  ASSIGNMENT_ACTION_SECRET: 'solvo-e2e-assignment-secret-not-for-production',
   TECHNICIAN_ACTION_BASE_URL: 'http://127.0.0.1:5173',
   NOTIFICATION_PROVIDER: 'mock',
   AI_PROVIDER: 'mock',
@@ -36,7 +38,7 @@ export default defineConfig({
       cwd: '.',
       url: 'http://127.0.0.1:5173',
       reuseExistingServer: false,
-      env: { ...process.env, ...testEnvironment, VITE_API_BASE_URL: 'http://127.0.0.1:8001' },
+      env: { ...process.env, ...testEnvironment, VITE_API_BASE_URL: '', SOLVO_API_PROXY_TARGET: 'http://127.0.0.1:8001' },
     },
   ],
 })

@@ -3,12 +3,14 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from '../App'
-import { api } from '../services/api'
+import { api, ApiError } from '../services/api'
 import { clearDemoAccessKey, getDemoAccessKey, setDemoAccessKey } from '../services/demoAccess'
+import { clearDemoSessionToken, getDemoSessionToken } from '../services/demoSession'
 
 afterEach(() => {
   cleanup()
   clearDemoAccessKey()
+  clearDemoSessionToken()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   window.history.replaceState({}, '', '/')
@@ -20,12 +22,28 @@ it('shows the access screen when the browser session has no demo key', () => {
 })
 
 it('stores an entered key for the session and opens the normal application', async () => {
+  vi.spyOn(api, 'acquireDemoSession').mockResolvedValue({
+    enabled: false, session_token: null, expires_at: null, telegram_linked: false,
+  })
   vi.spyOn(api, 'list').mockResolvedValue([])
   render(<App />)
   await userEvent.type(screen.getByLabelText('Chiave di accesso'), 'correct-demo-key')
   await userEvent.click(screen.getByRole('button', { name: 'Entra nella demo' }))
   await screen.findByText('La tua operatività, a colpo d’occhio.')
   expect(getDemoAccessKey()).toBe('correct-demo-key')
+})
+
+it('shows the exclusive-session busy screen without exposing visitor data', async () => {
+  vi.spyOn(api, 'acquireDemoSession').mockRejectedValue(new ApiError(
+    'Demo temporaneamente in uso.', 409,
+    { detail: { code: 'DEMO_IN_USE', retry_after_seconds: 125 } },
+  ))
+  render(<App />)
+  await userEvent.type(screen.getByLabelText('Chiave di accesso'), 'correct-demo-key')
+  await userEvent.click(screen.getByRole('button', { name: 'Entra nella demo' }))
+  expect(await screen.findByRole('heading', { name: 'Demo temporaneamente in uso' })).toBeTruthy()
+  expect(screen.getByText('Disponibile tra circa 3 min.')).toBeTruthy()
+  expect(getDemoSessionToken()).toBeUndefined()
 })
 
 it('sends the session key in normal API requests and clears it after a 401', async () => {
