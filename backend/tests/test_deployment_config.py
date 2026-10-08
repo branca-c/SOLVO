@@ -135,6 +135,6 @@ def test_render_blueprint_has_backend_commands_and_no_tunnel_hostname():
     assert "buildCommand: pip install -r requirements.txt && alembic upgrade head" in blueprint
     assert "preDeployCommand:" not in blueprint
     assert "PYTHON_VERSION" in blueprint
-    assert "startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT" in blueprint
+    assert "startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-access-log" in blueprint
     assert "healthCheckPath: /health" in blueprint
     assert "trycloudflare.com" not in blueprint
