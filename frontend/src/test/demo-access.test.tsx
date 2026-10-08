@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import App from '../App'
 import { api, ApiError } from '../services/api'
 import { clearDemoAccessKey, getDemoAccessKey, setDemoAccessKey } from '../services/demoAccess'
-import { clearDemoSessionToken, getDemoSessionToken } from '../services/demoSession'
+import { clearDemoSessionToken, getDemoSessionToken, setDemoSessionToken } from '../services/demoSession'
 
 afterEach(() => {
   cleanup()
@@ -44,6 +44,45 @@ it('shows the exclusive-session busy screen without exposing visitor data', asyn
   expect(await screen.findByRole('heading', { name: 'Demo temporaneamente in uso' })).toBeTruthy()
   expect(screen.getByText('Disponibile tra circa 3 min.')).toBeTruthy()
   expect(getDemoSessionToken()).toBeUndefined()
+})
+
+it('keeps an existing session token after a transient heartbeat error', async () => {
+  setDemoAccessKey('correct-demo-key')
+  setDemoSessionToken('still-valid-token')
+  vi.spyOn(api, 'heartbeatDemoSession').mockRejectedValue(new ApiError('Connessione non riuscita.', 0))
+  const acquire = vi.spyOn(api, 'acquireDemoSession')
+  render(<App />)
+  expect(await screen.findByRole('heading', { name: 'Impossibile avviare la demo' })).toBeTruthy()
+  expect(getDemoSessionToken()).toBe('still-valid-token')
+  expect(acquire).not.toHaveBeenCalled()
+})
+
+it('clears an invalid existing token and recovers by acquiring a new session', async () => {
+  setDemoAccessKey('correct-demo-key')
+  setDemoSessionToken('expired-token')
+  vi.spyOn(api, 'heartbeatDemoSession').mockRejectedValue(new ApiError('Sessione demo non valida.', 401))
+  vi.spyOn(api, 'acquireDemoSession').mockResolvedValue({
+    enabled: false, session_token: null, expires_at: null, telegram_linked: false,
+  })
+  vi.spyOn(api, 'list').mockResolvedValue([])
+  render(<App />)
+  await screen.findByText('La tua operatività, a colpo d’occhio.')
+  expect(getDemoSessionToken()).toBeUndefined()
+  expect(api.acquireDemoSession).toHaveBeenCalledTimes(1)
+})
+
+it('shows a recoverable error for failed acquisition and retries successfully', async () => {
+  setDemoAccessKey('correct-demo-key')
+  vi.spyOn(api, 'acquireDemoSession')
+    .mockRejectedValueOnce(new ApiError('Servizio non disponibile.', 500))
+    .mockResolvedValueOnce({ enabled: false, session_token: null, expires_at: null, telegram_linked: false })
+  vi.spyOn(api, 'list').mockResolvedValue([])
+  render(<App />)
+  expect(await screen.findByRole('heading', { name: 'Impossibile avviare la demo' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Riprova' })).toBeTruthy()
+  await userEvent.click(screen.getByRole('button', { name: 'Riprova' }))
+  expect(await screen.findByText('La tua operatività, a colpo d’occhio.')).toBeTruthy()
+  expect(api.acquireDemoSession).toHaveBeenCalledTimes(2)
 })
 
 it('sends the session key in normal API requests and clears it after a 401', async () => {
